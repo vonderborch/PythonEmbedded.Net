@@ -1,0 +1,41 @@
+<Solution>
+  <Folder Name="/.build/">
+    <Project Path=".build\post_solution_build.csproj" Type="C#">
+      <BuildDependency Project="test\automated\PythonEmbedded.Net.Test\PythonEmbedded.Net.Test.csproj" />
+    </Project>
+    <Project Path=".build\pre_solution_build.csproj" Type="C#" />
+    <File Path=".build\version_bump.ps1" />
+    <File Path=".build\version_bump_common.ps1" />
+    <File Path=".build\version_bump_dialog.ps1" />
+    <File Path=".build\base_logo.png" />
+    <File Path=".build\generate_project_logo.py" />
+    <File Path=".build\generate_virtual_environment.py" />
+  </Folder>
+  <Folder Name="/.build/font/">
+    <File Path=".build\font\copperplate_gothic_bold.otf" />
+    <File Path=".build\font\readme.html" />
+  </Folder>
+  <Folder Name="/Docs/" />
+  <Folder Name="/SolutionFiles/">
+    <File Path=".gitattributes" />
+    <File Path=".gitignore" />
+    <File Path="CODEOWNERS" />
+    <File Path="logo.png" />
+    <File Path="README.md" />
+    <File Path="logo.ico" />
+    <File Path="LICENSE" />
+    <File Path="generate_logo.py" />
+  </Folder>
+  <Folder Name="/source/">
+    <Project Path="source\PythonEmbedded.Net\PythonEmbedded.Net.csproj" Type="C#">
+      <BuildDependency Project=".build\pre_solution_build.csproj" />
+    </Project>
+  </Folder>
+  <Folder Name="/test/" />
+  <Folder Name="/test/automated/">
+    <Project Path="test\automated\PythonEmbedded.Net.Test\PythonEmbedded.Net.Test.csproj" Type="C#" />
+  </Folder>
+  <Folder Name="/test/manual/">
+    <Project Path="test\manual\PythonEmbedded.Net.DevTest\PythonEmbedded.Net.DevTest.csproj" Type="C#" />
+  </Folder>
+</Solution>

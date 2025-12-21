@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net9.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <IsPackable>false</IsPackable>
+        <Configurations>Debug;Release</Configurations>
+        <Platforms>AnyCPU</Platforms>
+    </PropertyGroup>
+
+    <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
+        <OutputPath>debug\post\</OutputPath>
+    </PropertyGroup>
+
+    <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+        <OutputPath>release\post\</OutputPath>
+    </PropertyGroup>
+
+    <Target Name="PostBuild" AfterTargets="PostBuildEvent">
+        <Exec Command="PowerShell -NoProfile -ExecutionPolicy Bypass -File &quot;$(SolutionDir).build\post_build.ps1&quot; -ProjectDir $(ProjectDir) -SolutionDir $(SolutionDir)" Condition="'$(ConfigurationName)' == 'Release' and '$(OS)' == 'Windows_NT'"/>
+        <Exec Command="pwsh -NoProfile -ExecutionPolicy Bypass -File &quot;$(SolutionDir).build/post_build.ps1&quot; -ProjectDir $(ProjectDir) -SolutionDir $(SolutionDir)" Condition="'$(ConfigurationName)' == 'Release' and '$(OS)' != 'Windows_NT'"/>
+    </Target>
+</Project>
