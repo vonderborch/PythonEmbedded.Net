@@ -86,7 +86,11 @@ public static class JsonHelpers
     /// <param name="options">Options to use when serializing the file.</param>
     public static void SerializeToFile(string path, object obj, JsonSerializerOptions? options = null)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(path));
+        var directory = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
         var contents = SerializeToString(obj, options);
         File.WriteAllText(path, contents);
     }

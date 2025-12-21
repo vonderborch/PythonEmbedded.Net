@@ -2,6 +2,21 @@
 
 A .NET library for managing local, embeddable Python instances. Download, install, manage, and execute Python environments directly within .NET applications without requiring system-wide Python installations.
 
+![Logo](https://raw.githubusercontent.com/vonderborch/PythonEmbedded.Net/refs/heads/main/logo.png)
+
+## Installation
+
+### Nuget
+
+[![NuGet version (PythonEmbedded.Net)](https://img.shields.io/nuget/v/PythonEmbedded.Net.svg?style=flat-square)](https://www.nuget.org/packages/PythonEmbedded.Net/)
+
+The recommended installation approach is to use the available nuget
+package: [PythonEmbedded.Net](https://www.nuget.org/packages/PythonEmbedded.Net/)
+
+### Clone
+
+Alternatively, you can clone this repo and reference the PythonEmbedded.Net project in your project.
+
 ## Features
 
 - ✅ **Automatic Python Distribution Management**: Download and install Python distributions from [python-build-standalone](https://github.com/astral-sh/python-build-standalone)

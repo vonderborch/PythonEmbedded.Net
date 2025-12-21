@@ -58,6 +58,84 @@ public abstract class BasePythonRuntime
     protected abstract void ValidateInstallation();
 
     /// <summary>
+    /// Performs a comprehensive health check of the Python installation.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A dictionary containing health check results.</returns>
+    public async Task<Dictionary<string, object>> ValidatePythonInstallationAsync(CancellationToken cancellationToken = default)
+    {
+        var results = new Dictionary<string, object>();
+
+        // Check if executable exists
+        results["ExecutableExists"] = File.Exists(PythonExecutablePath);
+        results["ExecutablePath"] = PythonExecutablePath;
+
+        // Check if working directory exists
+        results["WorkingDirectoryExists"] = Directory.Exists(WorkingDirectory);
+        results["WorkingDirectory"] = WorkingDirectory;
+
+        // Try to get Python version
+        try
+        {
+            var versionInfo = await GetPythonVersionInfoAsync(cancellationToken).ConfigureAwait(false);
+            results["PythonVersionInfo"] = versionInfo;
+            results["PythonVersionCheck"] = "Success";
+        }
+        catch (Exception ex)
+        {
+            results["PythonVersionCheck"] = "Failed";
+            results["PythonVersionError"] = ex.Message;
+        }
+
+        // Try to get pip version
+        try
+        {
+            var pipVersion = await GetPipVersionAsync(cancellationToken).ConfigureAwait(false);
+            results["PipVersion"] = pipVersion;
+            results["PipCheck"] = "Success";
+        }
+        catch (Exception ex)
+        {
+            results["PipCheck"] = "Failed";
+            results["PipError"] = ex.Message;
+        }
+
+        // Try a simple command execution
+        try
+        {
+            var testResult = await ExecuteCommandAsync("print('health_check')", cancellationToken: cancellationToken).ConfigureAwait(false);
+            results["CommandExecution"] = testResult.ExitCode == 0 ? "Success" : "Failed";
+            results["CommandExitCode"] = testResult.ExitCode;
+        }
+        catch (Exception ex)
+        {
+            results["CommandExecution"] = "Failed";
+            results["CommandError"] = ex.Message;
+        }
+
+        // Overall health status
+        var allChecks = new[] { "ExecutableExists", "WorkingDirectoryExists", "PythonVersionCheck", "PipCheck", "CommandExecution" };
+        var allPassed = allChecks.All(key => 
+            results.TryGetValue(key, out var value) && 
+            (value is bool boolVal && boolVal) || 
+            (value is string strVal && strVal == "Success"));
+
+        results["OverallHealth"] = allPassed ? "Healthy" : "Unhealthy";
+
+        return results;
+    }
+
+    /// <summary>
+    /// Performs a comprehensive health check (synchronous version).
+    /// </summary>
+    public Dictionary<string, object> ValidatePythonInstallation()
+    {
+        Task<Dictionary<string, object>> task = ValidatePythonInstallationAsync();
+        task.Wait();
+        return task.Result;
+    }
+
+    /// <summary>
     /// Executes a Python command and returns the result.
     /// </summary>
     /// <param name="command">The Python command to execute (e.g., "-c 'print(\"Hello\")'").</param>
@@ -67,6 +145,9 @@ public abstract class BasePythonRuntime
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <param name="workingDirectory">Optional working directory override.</param>
     /// <param name="environmentVariables">Optional environment variables to set for the execution.</param>
+    /// <param name="priority">Optional process priority.</param>
+    /// <param name="maxMemoryMB">Optional maximum memory limit in MB (note: requires process access which is abstracted).</param>
+    /// <param name="timeout">Optional per-execution timeout (in addition to CancellationToken).</param>
     /// <returns>The execution result containing exit code, stdout, and stderr.</returns>
     public async Task<PythonExecutionResult> ExecuteCommandAsync(
         string command,
@@ -75,7 +156,10 @@ public abstract class BasePythonRuntime
         Action<string>? stderrHandler = null,
         CancellationToken cancellationToken = default,
         string? workingDirectory = null,
-        Dictionary<string, string>? environmentVariables = null)
+        Dictionary<string, string>? environmentVariables = null,
+        ProcessPriorityClass? priority = null,
+        int? maxMemoryMB = null,
+        TimeSpan? timeout = null)
     {
         if (string.IsNullOrWhiteSpace(command))
             throw new ArgumentException("Command cannot be null or empty.", nameof(command));
@@ -91,7 +175,10 @@ public abstract class BasePythonRuntime
             stderrHandler,
             cancellationToken,
             workingDirectory,
-            environmentVariables).ConfigureAwait(false);
+            environmentVariables,
+            priority,
+            maxMemoryMB,
+            timeout).ConfigureAwait(false);
 
         this.Logger?.LogDebug("Command execution completed with exit code: {ExitCode}", result.ExitCode);
 
@@ -128,6 +215,9 @@ public abstract class BasePythonRuntime
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <param name="workingDirectory">Optional working directory override.</param>
     /// <param name="environmentVariables">Optional environment variables to set for the execution.</param>
+    /// <param name="priority">Optional process priority.</param>
+    /// <param name="maxMemoryMB">Optional maximum memory limit in MB (note: requires process access which is abstracted).</param>
+    /// <param name="timeout">Optional per-execution timeout (in addition to CancellationToken).</param>
     /// <returns>The execution result containing exit code, stdout, and stderr.</returns>
     public async Task<PythonExecutionResult> ExecuteScriptAsync(
         string scriptPath,
@@ -137,7 +227,10 @@ public abstract class BasePythonRuntime
         Action<string>? stderrHandler = null,
         CancellationToken cancellationToken = default,
         string? workingDirectory = null,
-        Dictionary<string, string>? environmentVariables = null)
+        Dictionary<string, string>? environmentVariables = null,
+        ProcessPriorityClass? priority = null,
+        int? maxMemoryMB = null,
+        TimeSpan? timeout = null)
     {
         if (string.IsNullOrWhiteSpace(scriptPath))
             throw new ArgumentException("Script path cannot be null or empty.", nameof(scriptPath));
@@ -163,7 +256,10 @@ public abstract class BasePythonRuntime
             stderrHandler,
             cancellationToken,
             workingDirectory,
-            environmentVariables).ConfigureAwait(false);
+            environmentVariables,
+            priority,
+            maxMemoryMB,
+            timeout).ConfigureAwait(false);
 
         this.Logger?.LogDebug("Script execution completed with exit code: {ExitCode}", result.ExitCode);
 
@@ -1576,7 +1672,10 @@ public abstract class BasePythonRuntime
         Action<string>? stderrHandler,
         CancellationToken cancellationToken,
         string? workingDirectory = null,
-        Dictionary<string, string>? environmentVariables = null)
+        Dictionary<string, string>? environmentVariables = null,
+        ProcessPriorityClass? priority = null,
+        int? maxMemoryMB = null,
+        TimeSpan? timeout = null)
     {
         var processStartInfo = new ProcessStartInfo
         {
@@ -1607,17 +1706,38 @@ public abstract class BasePythonRuntime
             processStartInfo.ArgumentList.Add(arg);
         }
 
-        // Use the process executor service for execution
-        var processResult = await ProcessExecutor.ExecuteAsync(
-            processStartInfo,
-            stdinHandler,
-            stdoutHandler,
-            stderrHandler,
-            cancellationToken).ConfigureAwait(false);
+        // Create a combined cancellation token that includes the timeout if specified
+        CancellationToken effectiveCancellationToken = cancellationToken;
+        CancellationTokenSource? timeoutCts = null;
+        if (timeout.HasValue && timeout.Value > TimeSpan.Zero)
+        {
+            timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(timeout.Value);
+            effectiveCancellationToken = timeoutCts.Token;
+        }
 
-        return new PythonExecutionResult(
-            processResult.ExitCode,
-            processResult.StandardOutput,
-            processResult.StandardError);
+        try
+        {
+            // Use the process executor service for execution
+            var processResult = await ProcessExecutor.ExecuteAsync(
+                processStartInfo,
+                stdinHandler,
+                stdoutHandler,
+                stderrHandler,
+                effectiveCancellationToken).ConfigureAwait(false);
+
+            // Note: ProcessPriority and maxMemoryMB would need to be set on the Process object
+            // which is currently abstracted in ProcessExecutor. These parameters are accepted
+            // for API compatibility but are not yet fully implemented.
+
+            return new PythonExecutionResult(
+                processResult.ExitCode,
+                processResult.StandardOutput,
+                processResult.StandardError);
+        }
+        finally
+        {
+            timeoutCts?.Dispose();
+        }
     }
 }

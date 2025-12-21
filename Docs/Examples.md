@@ -98,6 +98,27 @@ var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync(
 ```csharp
 // Delete a virtual environment
 var deleted = await rootRuntime.DeleteVirtualEnvironmentAsync("myproject");
+```
+
+### Cloning Virtual Environments
+
+```csharp
+// Clone an existing virtual environment
+var clonedVenv = await rootRuntime.CloneVirtualEnvironmentAsync("source_venv", "cloned_venv");
+
+// The cloned environment will have all the same packages
+Assert.That(await clonedVenv.IsPackageInstalledAsync("numpy"), Is.True);
+```
+
+### Exporting and Importing Virtual Environments
+
+```csharp
+// Export a virtual environment to an archive
+var exportPath = await rootRuntime.ExportVirtualEnvironmentAsync("myproject", "./backups/myproject_venv.zip");
+
+// Later, import it back
+var importedVenv = await rootRuntime.ImportVirtualEnvironmentAsync("restored_project", "./backups/myproject_venv.zip");
+```
 if (deleted)
 {
     Console.WriteLine("Virtual environment deleted successfully");

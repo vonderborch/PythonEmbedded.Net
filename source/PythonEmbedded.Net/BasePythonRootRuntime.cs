@@ -333,4 +333,203 @@ public abstract class BasePythonRootRuntime : BasePythonRuntime
 
         return size;
     }
+
+    /// <summary>
+    /// Clones a virtual environment to create a new one with the same packages and configuration.
+    /// </summary>
+    /// <param name="sourceName">The name of the source virtual environment.</param>
+    /// <param name="targetName">The name of the target virtual environment.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The cloned virtual environment runtime.</returns>
+    public async Task<BasePythonVirtualRuntime> CloneVirtualEnvironmentAsync(
+        string sourceName,
+        string targetName,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(sourceName))
+            throw new ArgumentException("Source virtual environment name cannot be null or empty.", nameof(sourceName));
+        if (string.IsNullOrWhiteSpace(targetName))
+            throw new ArgumentException("Target virtual environment name cannot be null or empty.", nameof(targetName));
+
+        var sourcePath = Path.Combine(VirtualEnvironmentsDirectory, sourceName);
+        if (!Directory.Exists(sourcePath))
+            throw new DirectoryNotFoundException($"Source virtual environment not found: {sourceName}");
+
+        var targetPath = Path.Combine(VirtualEnvironmentsDirectory, targetName);
+        if (Directory.Exists(targetPath))
+            throw new InvalidOperationException($"Target virtual environment already exists: {targetName}");
+
+        this.Logger?.LogInformation("Cloning virtual environment {Source} to {Target}", sourceName, targetName);
+
+        try
+        {
+            // Create target directory
+            Directory.CreateDirectory(targetPath);
+
+            // Copy all files and directories from source to target
+            await CopyDirectoryAsync(sourcePath, targetPath, cancellationToken).ConfigureAwait(false);
+
+            this.Logger?.LogInformation("Successfully cloned virtual environment {Source} to {Target}", sourceName, targetName);
+
+            return await GetOrCreateVirtualEnvironmentAsync(targetName, cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // Clean up target directory if creation failed
+            if (Directory.Exists(targetPath))
+            {
+                try
+                {
+                    Directory.Delete(targetPath, true);
+                }
+                catch
+                {
+                    // Ignore cleanup errors
+                }
+            }
+
+            this.Logger?.LogError(ex, "Failed to clone virtual environment {Source} to {Target}", sourceName, targetName);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Exports a virtual environment to an archive file.
+    /// </summary>
+    /// <param name="name">The name of the virtual environment to export.</param>
+    /// <param name="outputPath">The path where to save the archive file.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The path to the created archive file.</returns>
+    public async Task<string> ExportVirtualEnvironmentAsync(
+        string name,
+        string outputPath,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            throw new ArgumentException("Virtual environment name cannot be null or empty.", nameof(name));
+        if (string.IsNullOrWhiteSpace(outputPath))
+            throw new ArgumentException("Output path cannot be null or empty.", nameof(outputPath));
+
+        var venvPath = Path.Combine(VirtualEnvironmentsDirectory, name);
+        if (!Directory.Exists(venvPath))
+            throw new DirectoryNotFoundException($"Virtual environment not found: {name}");
+
+        this.Logger?.LogInformation("Exporting virtual environment {Name} to {Path}", name, outputPath);
+
+        // Ensure output directory exists
+        var outputDir = Path.GetDirectoryName(outputPath);
+        if (!string.IsNullOrEmpty(outputDir) && !Directory.Exists(outputDir))
+        {
+            Directory.CreateDirectory(outputDir);
+        }
+
+        // Determine archive format from extension
+        var extension = Path.GetExtension(outputPath).ToLowerInvariant();
+        if (extension == ".zip")
+        {
+            System.IO.Compression.ZipFile.CreateFromDirectory(venvPath, outputPath);
+        }
+        else if (extension == ".tar" || extension == ".tar.gz" || extension.EndsWith(".tar.zst", StringComparison.OrdinalIgnoreCase))
+        {
+            // For tar archives, we'll use ArchiveHelper's extraction logic in reverse
+            // Since ArchiveHelper uses external tools, we'll use a simpler approach with System.IO.Compression
+            // For full tar support, would need a library like SharpCompress
+            throw new NotSupportedException($"Archive format '{extension}' is not supported for export. Please use .zip");
+        }
+        else
+        {
+            // Default to zip if no extension
+            var zipPath = string.IsNullOrEmpty(Path.GetExtension(outputPath)) ? outputPath + ".zip" : outputPath;
+            System.IO.Compression.ZipFile.CreateFromDirectory(venvPath, zipPath);
+            outputPath = zipPath;
+        }
+
+        this.Logger?.LogInformation("Successfully exported virtual environment {Name} to {Path}", name, outputPath);
+        return outputPath;
+    }
+
+    /// <summary>
+    /// Imports a virtual environment from an archive file.
+    /// </summary>
+    /// <param name="name">The name for the imported virtual environment.</param>
+    /// <param name="archivePath">The path to the archive file to import.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The imported virtual environment runtime.</returns>
+    public async Task<BasePythonVirtualRuntime> ImportVirtualEnvironmentAsync(
+        string name,
+        string archivePath,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            throw new ArgumentException("Virtual environment name cannot be null or empty.", nameof(name));
+        if (string.IsNullOrWhiteSpace(archivePath))
+            throw new ArgumentException("Archive path cannot be null or empty.", nameof(archivePath));
+        if (!File.Exists(archivePath))
+            throw new FileNotFoundException($"Archive file not found: {archivePath}", archivePath);
+
+        var targetPath = Path.Combine(VirtualEnvironmentsDirectory, name);
+        if (Directory.Exists(targetPath))
+            throw new InvalidOperationException($"Virtual environment already exists: {name}");
+
+        this.Logger?.LogInformation("Importing virtual environment {Name} from {Path}", name, archivePath);
+
+        try
+        {
+            // Extract archive to target directory
+            var extension = Path.GetExtension(archivePath).ToLowerInvariant();
+            if (extension == ".zip")
+            {
+                System.IO.Compression.ZipFile.ExtractToDirectory(archivePath, targetPath);
+            }
+            else
+            {
+                // Use ArchiveHelper for other formats (tar, tar.gz, tar.zst)
+                await ArchiveHelper.ExtractAsync(archivePath, targetPath, cancellationToken).ConfigureAwait(false);
+            }
+
+            this.Logger?.LogInformation("Successfully imported virtual environment {Name} from {Path}", name, archivePath);
+
+            return await GetOrCreateVirtualEnvironmentAsync(name, recreateIfExists: false, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // Clean up target directory if import failed
+            if (Directory.Exists(targetPath))
+            {
+                try
+                {
+                    Directory.Delete(targetPath, true);
+                }
+                catch
+                {
+                    // Ignore cleanup errors
+                }
+            }
+
+            this.Logger?.LogError(ex, "Failed to import virtual environment {Name} from {Path}", name, archivePath);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Copies a directory and its contents recursively.
+    /// </summary>
+    private async Task CopyDirectoryAsync(string sourceDir, string targetDir, CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(targetDir);
+
+        foreach (var file in Directory.GetFiles(sourceDir))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var targetFile = Path.Combine(targetDir, Path.GetFileName(file));
+            File.Copy(file, targetFile, overwrite: true);
+        }
+
+        foreach (var directory in Directory.GetDirectories(sourceDir))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var targetSubDir = Path.Combine(targetDir, Path.GetFileName(directory));
+            await CopyDirectoryAsync(directory, targetSubDir, cancellationToken).ConfigureAwait(false);
+        }
+    }
 }

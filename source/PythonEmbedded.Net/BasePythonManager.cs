@@ -658,4 +658,305 @@ public abstract class BasePythonManager
 
         return size;
     }
+
+    /// <summary>
+    /// Checks if there is sufficient disk space available.
+    /// </summary>
+    /// <param name="requiredBytes">The required disk space in bytes.</param>
+    /// <returns>True if sufficient disk space is available, false otherwise.</returns>
+    public bool CheckDiskSpace(long requiredBytes)
+    {
+        try
+        {
+            var driveInfo = new DriveInfo(_rootDirectory);
+            var availableBytes = driveInfo.AvailableFreeSpace;
+            return availableBytes >= requiredBytes;
+        }
+        catch (Exception ex)
+        {
+            this._logger?.LogWarning(ex, "Failed to check disk space");
+            // Return true if we can't determine - fail later rather than blocking
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Tests network connectivity to the GitHub API.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>True if connectivity test succeeds, false otherwise.</returns>
+    public async Task<bool> TestNetworkConnectivityAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var httpClient = new System.Net.Http.HttpClient();
+            httpClient.Timeout = TimeSpan.FromSeconds(10);
+            
+            var response = await httpClient.GetAsync("https://api.github.com", cancellationToken).ConfigureAwait(false);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            this._logger?.LogWarning(ex, "Network connectivity test failed");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Tests network connectivity (synchronous version).
+    /// </summary>
+    public bool TestNetworkConnectivity()
+    {
+        Task<bool> task = TestNetworkConnectivityAsync();
+        task.Wait();
+        return task.Result;
+    }
+
+    /// <summary>
+    /// Gets system requirements information.
+    /// </summary>
+    /// <returns>A dictionary containing system requirements check results.</returns>
+    public Dictionary<string, object> GetSystemRequirements()
+    {
+        var results = new Dictionary<string, object>();
+        var platform = PlatformInfo.Detect();
+
+        results["Platform"] = platform.OperatingSystem ?? "Unknown";
+        results["Architecture"] = platform.Architecture ?? "Unknown";
+        results["TargetTriple"] = platform.TargetTriple ?? "Unknown";
+
+        // Check OS version requirements
+        try
+        {
+            platform.ValidateMinimumOsVersion();
+            results["OsVersionCheck"] = "Passed";
+        }
+        catch (Exception ex)
+        {
+            results["OsVersionCheck"] = "Failed";
+            results["OsVersionError"] = ex.Message;
+        }
+
+        // Check disk space (sample check for 100MB)
+        var sampleRequiredBytes = 100L * 1024 * 1024; // 100 MB
+        results["DiskSpaceCheck"] = CheckDiskSpace(sampleRequiredBytes) ? "Sufficient" : "Insufficient";
+
+        return results;
+    }
+
+    /// <summary>
+    /// Runs diagnostics and returns issues found.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A list of diagnostic issues found.</returns>
+    public async Task<IReadOnlyList<string>> DiagnoseIssuesAsync(CancellationToken cancellationToken = default)
+    {
+        var issues = new List<string>();
+
+        // Check system requirements
+        var systemReqs = GetSystemRequirements();
+        if (systemReqs.TryGetValue("OsVersionCheck", out var osCheck) && osCheck is string osCheckStr && osCheckStr == "Failed")
+        {
+            issues.Add($"OS version check failed: {systemReqs.GetValueOrDefault("OsVersionError", "Unknown error")}");
+        }
+
+        // Check network connectivity
+        var networkOk = await TestNetworkConnectivityAsync(cancellationToken).ConfigureAwait(false);
+        if (!networkOk)
+        {
+            issues.Add("Network connectivity test failed - cannot reach GitHub API");
+        }
+
+        // Check disk space for each instance
+        foreach (var instance in _metadata.Instances)
+        {
+            if (!string.IsNullOrWhiteSpace(instance.Directory) && Directory.Exists(instance.Directory))
+            {
+                var size = GetInstanceSize(instance.PythonVersion, instance.BuildDate);
+                var requiredBytes = size + (100L * 1024 * 1024); // Add 100MB buffer
+                if (!CheckDiskSpace(requiredBytes))
+                {
+                    issues.Add($"Insufficient disk space for instance {instance.PythonVersion} (required: {requiredBytes / (1024 * 1024)} MB)");
+                }
+
+                // Validate instance integrity
+                if (!ValidateInstanceIntegrity(instance.PythonVersion, instance.BuildDate))
+                {
+                    issues.Add($"Instance {instance.PythonVersion} failed integrity check");
+                }
+            }
+        }
+
+        return issues.AsReadOnly();
+    }
+
+    /// <summary>
+    /// Runs diagnostics (synchronous version).
+    /// </summary>
+    public IReadOnlyList<string> DiagnoseIssues()
+    {
+        Task<IReadOnlyList<string>> task = DiagnoseIssuesAsync();
+        task.Wait();
+        return task.Result;
+    }
+
+    /// <summary>
+    /// Exports a Python instance to an archive file.
+    /// </summary>
+    /// <param name="pythonVersion">The Python version of the instance to export.</param>
+    /// <param name="outputPath">The path where to save the archive file.</param>
+    /// <param name="buildDate">The build date (optional, uses latest if not specified).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The path to the created archive file.</returns>
+    public async Task<string> ExportInstanceAsync(
+        string pythonVersion,
+        string outputPath,
+        string? buildDate = null,
+        CancellationToken cancellationToken = default)
+    {
+        var instance = GetInstanceInfo(pythonVersion, buildDate);
+        if (instance == null || string.IsNullOrWhiteSpace(instance.Directory))
+            throw new InstanceNotFoundException($"Instance not found: {pythonVersion}");
+
+        if (!Directory.Exists(instance.Directory))
+            throw new DirectoryNotFoundException($"Instance directory not found: {instance.Directory}");
+
+        this._logger?.LogInformation("Exporting instance {Version} to {Path}", pythonVersion, outputPath);
+
+        // Ensure output directory exists
+        var outputDir = Path.GetDirectoryName(outputPath);
+        if (!string.IsNullOrEmpty(outputDir) && !Directory.Exists(outputDir))
+        {
+            Directory.CreateDirectory(outputDir);
+        }
+
+        // Determine archive format from extension
+        var extension = Path.GetExtension(outputPath).ToLowerInvariant();
+        if (extension == ".zip")
+        {
+            System.IO.Compression.ZipFile.CreateFromDirectory(instance.Directory, outputPath);
+        }
+        else
+        {
+            // Default to zip if no extension or unsupported format
+            var zipPath = string.IsNullOrEmpty(Path.GetExtension(outputPath)) ? outputPath + ".zip" : outputPath;
+            System.IO.Compression.ZipFile.CreateFromDirectory(instance.Directory, zipPath);
+            outputPath = zipPath;
+        }
+
+        this._logger?.LogInformation("Successfully exported instance {Version} to {Path}", pythonVersion, outputPath);
+        return outputPath;
+    }
+
+    /// <summary>
+    /// Imports a Python instance from an archive file.
+    /// </summary>
+    /// <param name="archivePath">The path to the archive file to import.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The imported instance metadata.</returns>
+    public async Task<InstanceMetadata> ImportInstanceAsync(
+        string archivePath,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(archivePath))
+            throw new ArgumentException("Archive path cannot be null or empty.", nameof(archivePath));
+        if (!File.Exists(archivePath))
+            throw new FileNotFoundException($"Archive file not found: {archivePath}", archivePath);
+
+        this._logger?.LogInformation("Importing instance from {Path}", archivePath);
+
+        // Extract to a temporary directory first
+        var tempDir = Path.Combine(_rootDirectory, "temp_import_" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(tempDir);
+
+        try
+        {
+            // Extract archive
+            var extension = Path.GetExtension(archivePath).ToLowerInvariant();
+            if (extension == ".zip")
+            {
+                System.IO.Compression.ZipFile.ExtractToDirectory(archivePath, tempDir);
+            }
+            else
+            {
+                await ArchiveHelper.ExtractAsync(archivePath, tempDir, cancellationToken).ConfigureAwait(false);
+            }
+
+            // Find Python installation path in extracted directory
+            var pythonInstallPath = FindPythonInstallPath(tempDir);
+
+            // Try to load instance metadata
+            InstanceMetadata? importedMetadata = null;
+            var metadataFile = Path.Combine(pythonInstallPath, "instance_metadata.json");
+            if (File.Exists(metadataFile))
+            {
+                importedMetadata = InstanceMetadata.Load(pythonInstallPath);
+            }
+
+            if (importedMetadata == null)
+            {
+                // Try to extract version from Python executable
+                var pythonExePath = FindPythonExecutablePath(pythonInstallPath);
+                if (string.IsNullOrEmpty(pythonExePath))
+                {
+                    throw new PythonInstallationException("Could not find Python executable in imported archive");
+                }
+
+                // Create a temporary runtime to get version info
+                var tempMetadata = new InstanceMetadata
+                {
+                    PythonVersion = "unknown",
+                    BuildDate = DateTime.Now.ToString("yyyyMMdd"),
+                    Directory = pythonInstallPath ?? tempDir
+                };
+                var tempRuntime = GetPythonRuntimeForInstance(tempMetadata);
+                var versionInfo = tempRuntime.GetPythonVersionInfo();
+
+                // Parse version from output
+                var versionMatch = System.Text.RegularExpressions.Regex.Match(versionInfo, @"(\d+\.\d+\.\d+)");
+                var detectedVersion = versionMatch.Success ? versionMatch.Groups[1].Value : "unknown";
+
+                importedMetadata = new InstanceMetadata
+                {
+                    PythonVersion = detectedVersion,
+                    BuildDate = DateTime.Now.ToString("yyyyMMdd"),
+                    Directory = pythonInstallPath ?? tempDir,
+                    InstallationDate = DateTime.Now,
+                    WasLatestBuild = false
+                };
+            }
+
+            // Move to final location
+            var finalPath = Path.Combine(_rootDirectory, $"python-{importedMetadata.PythonVersion}-{importedMetadata.BuildDate}");
+            if (Directory.Exists(finalPath))
+            {
+                throw new InvalidOperationException($"Instance already exists at: {finalPath}");
+            }
+
+            Directory.Move(pythonInstallPath, finalPath);
+            importedMetadata.Directory = finalPath;
+            importedMetadata.Save(finalPath);
+
+            // Add to metadata
+            _metadata.Instances.Add(importedMetadata);
+
+            this._logger?.LogInformation("Successfully imported instance {Version} from {Path}", importedMetadata.PythonVersion, archivePath);
+            return importedMetadata;
+        }
+        finally
+        {
+            // Clean up temporary directory
+            if (Directory.Exists(tempDir))
+            {
+                try
+                {
+                    Directory.Delete(tempDir, true);
+                }
+                catch
+                {
+                    // Ignore cleanup errors
+                }
+            }
+        }
+    }
 }

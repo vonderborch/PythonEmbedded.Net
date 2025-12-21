@@ -42,6 +42,27 @@ var netManager = new PythonNetManager(
     githubClient: new GitHubClient(new ProductHeaderValue("MyApp")));
 ```
 
+#### With Configuration
+
+```csharp
+// Create custom configuration
+var configuration = new ManagerConfiguration
+{
+    DefaultPythonVersion = "3.12",
+    DefaultTimeout = TimeSpan.FromMinutes(10),
+    RetryAttempts = 3,
+    UseExponentialBackoff = true
+};
+
+var manager = new PythonManager(
+    directory: "./python-instances",
+    githubClient: new GitHubClient(new ProductHeaderValue("MyApp")),
+    configuration: configuration);
+
+// Use default version from configuration
+var runtime = await manager.GetOrCreateInstanceAsync(); // Uses 3.12
+```
+
 ### 3. Get or Create a Python Instance
 
 ```csharp
@@ -81,6 +102,34 @@ await venv.InstallPackageAsync("pandas");
 
 // Execute code in the virtual environment
 var result = await venv.ExecuteCommandAsync("import pandas; print(pandas.__version__)");
+```
+
+### 7. Health Checks and Diagnostics
+
+```csharp
+// Validate Python installation health
+var health = await runtime.ValidatePythonInstallationAsync();
+Console.WriteLine($"Health status: {health["OverallHealth"]}");
+
+// Check system requirements
+var requirements = manager.GetSystemRequirements();
+
+// Run diagnostics
+var issues = await manager.DiagnoseIssuesAsync();
+if (issues.Count == 0)
+{
+    Console.WriteLine("No issues found!");
+}
+```
+
+### 8. Export and Import Instances
+
+```csharp
+// Export an instance for backup
+await manager.ExportInstanceAsync("3.12.0", "./backups/python-3.12.0.zip");
+
+// Import an instance from backup
+var imported = await manager.ImportInstanceAsync("./backups/python-3.12.0.zip");
 ```
 
 ## Complete Example
