@@ -279,6 +279,23 @@ public abstract class BasePythonManager
         Octokit.ReleaseAsset asset,
         CancellationToken cancellationToken)
     {
+        // Try Octokit first
+        try
+        {
+            return await ExtractBuildDateWithOctokitAsync(asset, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsOctokitRelatedException(ex))
+        {
+            // Octokit failed, try HTTP fallback
+            this._logger?.LogDebug("Octokit failed in ExtractBuildDateFromReleaseAsync, using HTTP fallback: {Error}", ex.Message);
+            return await ExtractBuildDateWithHttpFallbackAsync(asset, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task<string> ExtractBuildDateWithOctokitAsync(
+        Octokit.ReleaseAsset asset,
+        CancellationToken cancellationToken)
+    {
         // Query releases to find which one contains this asset
         const string repositoryOwner = "astral-sh";
         const string repositoryName = "python-build-standalone";
@@ -299,8 +316,45 @@ public abstract class BasePythonManager
             return "unknown";
         }
         
+        return ExtractBuildDateFromTag(release.TagName);
+    }
+
+    private async Task<string> ExtractBuildDateWithHttpFallbackAsync(
+        Octokit.ReleaseAsset asset,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Get all releases using HTTP
+            var releases = await Helpers.GitHubHttpFallbackHelper.GetAllReleasesAsync(null, cancellationToken).ConfigureAwait(false);
+            
+            // Find the release that contains this asset
+            var release = releases.FirstOrDefault(r => 
+                r.Assets.Any(a => a.Id == asset.Id || a.Name == asset.Name));
+            
+            if (release == null)
+            {
+                // Fallback: try to extract from asset name or use a default
+                this._logger?.LogWarning(
+                    "Could not find release for asset {AssetName} using HTTP fallback. Using default build date.",
+                    asset.Name);
+                return "unknown";
+            }
+            
+            return ExtractBuildDateFromTag(release.TagName);
+        }
+        catch (Exception ex)
+        {
+            this._logger?.LogWarning(
+                "HTTP fallback failed to extract build date for asset {AssetName}: {Error}. Using default build date.",
+                asset.Name, ex.Message);
+            return "unknown";
+        }
+    }
+
+    private static string ExtractBuildDateFromTag(string tag)
+    {
         // Extract build date from release tag (typically YYYYMMDD format)
-        var tag = release.TagName;
         var buildDateMatch = System.Text.RegularExpressions.Regex.Match(tag, @"(\d{8})");
         if (buildDateMatch.Success)
         {
@@ -314,11 +368,17 @@ public abstract class BasePythonManager
             return buildDateMatch.Groups[1].Value.Replace("-", "");
         }
         
-        // Fallback to release tag itself
-        this._logger?.LogWarning(
-            "Could not extract build date from release tag {Tag}. Using tag as build date.",
-            tag);
-        return tag;
+        return "unknown";
+    }
+
+    private static bool IsOctokitRelatedException(Exception ex)
+    {
+        // Check if the exception is related to Octokit (e.g., missing assembly, initialization issues)
+        var typeName = ex.GetType().FullName ?? string.Empty;
+        return typeName.Contains("Octokit", StringComparison.OrdinalIgnoreCase) ||
+               ex is TypeLoadException ||
+               ex is MissingMethodException ||
+               ex is DllNotFoundException;
     }
     
     private string FindPythonInstallPath(string extractedDirectory)

@@ -1,9 +1,9 @@
 <Solution>
   <Folder Name="/.build/">
-    <Project Path=".build\post_solution_build.csproj" Type="C#">
+    <Project Path=".build\post_solution_build.csproj">
       <BuildDependency Project="test\automated\PythonEmbedded.Net.Test\PythonEmbedded.Net.Test.csproj" />
     </Project>
-    <Project Path=".build\pre_solution_build.csproj" Type="C#" />
+    <Project Path=".build\pre_solution_build.csproj" />
     <File Path=".build\version_bump.ps1" />
     <File Path=".build\version_bump_common.ps1" />
     <File Path=".build\version_bump_dialog.ps1" />
@@ -15,7 +15,55 @@
     <File Path=".build\font\copperplate_gothic_bold.otf" />
     <File Path=".build\font\readme.html" />
   </Folder>
-  <Folder Name="/Docs/" />
+  <Folder Name="/Docs/">
+    <File Path="Docs\API-Reference.md" />
+    <File Path="Docs\Architecture.md" />
+    <File Path="Docs\Contributing.md" />
+    <File Path="Docs\Error-Handling.md" />
+    <File Path="Docs\Examples.md" />
+    <File Path="Docs\Getting-Started.md" />
+    <File Path="Docs\Quick-Reference.md" />
+    <File Path="Docs\README.md" />
+    <File Path="Docs\Troubleshooting.md" />
+  </Folder>
+  <Folder Name="/Docs/API/">
+    <File Path="Docs\API\Managers.md" />
+    <File Path="Docs\API\Models.md" />
+    <File Path="Docs\API\README.md" />
+    <File Path="Docs\API\Runtimes.md" />
+  </Folder>
+  <Folder Name="/Docs/API/Exceptions/">
+    <File Path="Docs\API\Exceptions\PythonExecutionException.md" />
+  </Folder>
+  <Folder Name="/Docs/API/Managers/">
+    <File Path="Docs\API\Managers\BasePythonManager.md" />
+    <File Path="Docs\API\Managers\PythonManager.md" />
+    <File Path="Docs\API\Managers\PythonNetManager.md" />
+  </Folder>
+  <Folder Name="/Docs/API/Models/">
+    <File Path="Docs\API\Models\InstanceMetadata.md" />
+    <File Path="Docs\API\Models\ManagerConfiguration.md" />
+    <File Path="Docs\API\Models\PackageInfo.md" />
+    <File Path="Docs\API\Models\PipConfiguration.md" />
+    <File Path="Docs\API\Models\PyPIPackageInfo.md" />
+  </Folder>
+  <Folder Name="/Docs/API/Records/">
+    <File Path="Docs\API\Records\ProcessExecutionResult.md" />
+    <File Path="Docs\API\Records\PythonExecutionResult.md" />
+  </Folder>
+  <Folder Name="/Docs/API/Runtimes/">
+    <File Path="Docs\API\Runtimes\BasePythonRootRuntime.md" />
+    <File Path="Docs\API\Runtimes\BasePythonRuntime.md" />
+    <File Path="Docs\API\Runtimes\BasePythonVirtualRuntime.md" />
+    <File Path="Docs\API\Runtimes\PythonNetRootRuntime.md" />
+    <File Path="Docs\API\Runtimes\PythonNetVirtualEnvironment.md" />
+    <File Path="Docs\API\Runtimes\PythonRootRuntime.md" />
+    <File Path="Docs\API\Runtimes\PythonRootVirtualEnvironment.md" />
+  </Folder>
+  <Folder Name="/Docs/API/Services/">
+    <File Path="Docs\API\Services\IProcessExecutor.md" />
+    <File Path="Docs\API\Services\ProcessExecutor.md" />
+  </Folder>
   <Folder Name="/SolutionFiles/">
     <File Path=".gitattributes" />
     <File Path=".gitignore" />
@@ -27,15 +75,15 @@
     <File Path="generate_logo.py" />
   </Folder>
   <Folder Name="/source/">
-    <Project Path="source\PythonEmbedded.Net\PythonEmbedded.Net.csproj" Type="C#">
+    <Project Path="source\PythonEmbedded.Net\PythonEmbedded.Net.csproj">
       <BuildDependency Project=".build\pre_solution_build.csproj" />
     </Project>
   </Folder>
   <Folder Name="/test/" />
   <Folder Name="/test/automated/">
-    <Project Path="test\automated\PythonEmbedded.Net.Test\PythonEmbedded.Net.Test.csproj" Type="C#" />
+    <Project Path="test\automated\PythonEmbedded.Net.Test\PythonEmbedded.Net.Test.csproj" />
   </Folder>
   <Folder Name="/test/manual/">
-    <Project Path="test\manual\PythonEmbedded.Net.DevTest\PythonEmbedded.Net.DevTest.csproj" Type="C#" />
+    <Project Path="test\manual\PythonEmbedded.Net.DevTest\PythonEmbedded.Net.DevTest.csproj" />
   </Folder>
 </Solution>

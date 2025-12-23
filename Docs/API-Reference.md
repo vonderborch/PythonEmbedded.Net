@@ -623,4 +623,3 @@ Represents a simplified search result from PyPI.
 - `PackageInstallationException`: Thrown when package installation fails
 - `PythonNotInstalledException`: Thrown when Python installation is missing or invalid
 - `PlatformNotSupportedException`: Thrown when the platform is not supported
-
