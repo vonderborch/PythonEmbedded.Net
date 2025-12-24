@@ -35,7 +35,7 @@ internal static class GitHubHttpHelper
         CancellationToken cancellationToken = default)
     {
         var client = CreateHttpClient();
-        var url = $"{GitHubApiBaseUrl}/repos/{RepositoryOwner}/{RepositoryName}/releases?per_page=100";
+        var url = $"{GitHubApiBaseUrl}/repos/{RepositoryOwner}/{RepositoryName}/releases?per_page=10";
         var releases = new List<GitHubReleaseDto>();
         var page = 1;
 

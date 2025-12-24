@@ -17,7 +17,7 @@ internal static class GitHubReleaseHelper
     /// <summary>
     /// Finds a release asset for the specified Python version, build date, and platform.
     /// </summary>
-    public static async Task<ReleaseAsset?> FindReleaseAssetAsync(
+    public static async Task<(Release? release, ReleaseAsset? asset)> FindReleaseAssetAsync(
         GitHubClient client,
         string pythonVersion,
         DateTime? buildDate,
@@ -34,7 +34,7 @@ internal static class GitHubReleaseHelper
         return await FindReleaseAssetWithOctokitAsync(client, pythonVersion, buildDate, platform, cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task<ReleaseAsset?> FindReleaseAssetWithOctokitAsync(
+    private static async Task<(Release? release, ReleaseAsset? asset)> FindReleaseAssetWithOctokitAsync(
         GitHubClient client,
         string pythonVersion,
         DateTime? buildDate,
@@ -53,6 +53,7 @@ internal static class GitHubReleaseHelper
         // Use HTTP for date-based searches (more efficient, avoids fetching all releases with Octokit)
         // Use Octokit for latest release (more efficient)
         Release? release = null;
+        ReleaseAsset? asset = null;
         
         if (buildDate.HasValue)
         {
@@ -107,19 +108,19 @@ internal static class GitHubReleaseHelper
         var preferredAssets = new List<ReleaseAsset>();
         var fallbackAssets = new List<ReleaseAsset>();
 
-        foreach (var asset in release.Assets)
+        foreach (var releaseAsset in release.Assets)
         {
             // If we have a partial version (e.g., "3.10"), match any patch version (e.g., "3.10.19")
             // Otherwise, match exact version
-            if (IsMatchingAsset(asset, pythonVersion, platform.TargetTriple, isPartialVersion, major, minor))
+            if (IsMatchingAsset(releaseAsset, pythonVersion, platform.TargetTriple, isPartialVersion, major, minor))
             {
-                if (IsInstallOnlyArchive(asset.Name))
+                if (IsInstallOnlyArchive(releaseAsset.Name))
                 {
-                    preferredAssets.Add(asset);
+                    preferredAssets.Add(releaseAsset);
                 }
-                else if (IsFullArchive(asset.Name))
+                else if (IsFullArchive(releaseAsset.Name))
                 {
-                    fallbackAssets.Add(asset);
+                    fallbackAssets.Add(releaseAsset);
                 }
             }
         }
@@ -131,7 +132,7 @@ internal static class GitHubReleaseHelper
             // For partial versions, prefer the latest patch version
             if (isPartialVersion)
             {
-                return preferredAssets
+                asset = preferredAssets
                     .OrderByDescending(a => 
                     {
                         var versionStr = ExtractVersionFromAssetName(a.Name);
@@ -146,8 +147,12 @@ internal static class GitHubReleaseHelper
                     }))
                     .ThenByDescending(a => a.UpdatedAt)
                     .First();
+
+                return (release, asset);
             }
-            return preferredAssets.OrderByDescending(a => a.UpdatedAt).First();
+
+            asset = preferredAssets.OrderByDescending(a => a.UpdatedAt).First();
+            return (release, asset);
         }
 
         if (fallbackAssets.Any())
@@ -155,7 +160,7 @@ internal static class GitHubReleaseHelper
             // For partial versions, prefer the latest patch version
             if (isPartialVersion)
             {
-                return fallbackAssets
+                asset = fallbackAssets
                     .OrderByDescending(a => 
                     {
                         var versionStr = ExtractVersionFromAssetName(a.Name);
@@ -170,8 +175,11 @@ internal static class GitHubReleaseHelper
                     }))
                     .ThenByDescending(a => a.UpdatedAt)
                     .First();
+                return (release, asset);
             }
-            return fallbackAssets.OrderByDescending(a => a.UpdatedAt).First();
+
+            asset = fallbackAssets.OrderByDescending(a => a.UpdatedAt).First();
+            return (release, asset);
         }
 
         throw new InstanceNotFoundException(
@@ -186,7 +194,7 @@ internal static class GitHubReleaseHelper
     /// <summary>
     /// Extracts version string from asset name for comparison.
     /// </summary>
-    private static string ExtractVersionFromAssetName(string assetName)
+    internal static string ExtractVersionFromAssetName(string assetName)
     {
         var match = System.Text.RegularExpressions.Regex.Match(
             assetName.ToLowerInvariant(),
@@ -305,11 +313,15 @@ internal static class GitHubReleaseHelper
 
     private static bool IsFullArchive(string fileName)
     {
+        var lowerFileName = fileName.ToLowerInvariant();
         // Full archives typically don't have "install" in the name, or explicitly say "full"
-        return fileName.ToLowerInvariant().Contains("full") ||
-               (!fileName.ToLowerInvariant().Contains("install") && 
-                (fileName.EndsWith(".tar.zst", StringComparison.OrdinalIgnoreCase) ||
-                 fileName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)));
+        return lowerFileName.Contains("full") ||
+               (!lowerFileName.Contains("install") && 
+                (lowerFileName.EndsWith(".tar.zst", StringComparison.OrdinalIgnoreCase) ||
+                 lowerFileName.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase) ||
+                 lowerFileName.EndsWith(".tar.bz2", StringComparison.OrdinalIgnoreCase) ||
+                 lowerFileName.EndsWith(".tar.bz", StringComparison.OrdinalIgnoreCase) ||
+                 lowerFileName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)));
     }
 
     /// <summary>

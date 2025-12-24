@@ -21,6 +21,9 @@ Alternatively, you can clone this repo and reference the PythonEmbedded.Net proj
 
 - ✅ **Automatic Python Distribution Management**: Download and install Python distributions from [python-build-standalone](https://github.com/astral-sh/python-build-standalone)
 - ✅ **Multiple Instance Support**: Manage multiple Python versions and build dates simultaneously
+- ✅ **Smart Version Matching**: 
+  - Exact versions (e.g., "3.12.5") match exactly
+  - Partial versions (e.g., "3.12") automatically find the latest patch version (e.g., "3.12.19")
 - ✅ **Virtual Environment Management**: Create and manage virtual environments for each Python instance
 - ✅ **Package Installation**: Install packages via pip (single packages, requirements.txt, pyproject.toml)
 - ✅ **Python Execution**: Execute Python code via subprocess or in-process using Python.NET
@@ -28,6 +31,7 @@ Alternatively, you can clone this repo and reference the PythonEmbedded.Net proj
   - **PythonManager**: Subprocess-based execution (standard Python execution)
   - **PythonNetManager**: Python.NET-based execution (in-process, high-performance)
 - ✅ **Cross-Platform**: Supports Windows, Linux, and macOS
+- ✅ **Archive Format Support**: Supports multiple archive formats (zip, tar.gz, tar.bz2, tar.bz, tar.zst)
 - ✅ **Modern C# Design**: Abstract classes for extensibility, dependency injection support, IDisposable for resource management
 - ✅ **Structured Logging**: Full support for Microsoft.Extensions.Logging
 - ✅ **Performance Optimizations**: Optional caching for GitHub API responses, object pooling for frequently allocated objects
@@ -101,24 +105,31 @@ await venv.InstallPackageAsync("numpy");
 var result = await venv.ExecuteCommandAsync("import numpy; print(numpy.__version__)");
 ```
 
-### Multiple Instances
+### Multiple Instances and Version Matching
 
 ```csharp
 var manager = new PythonManager("/path/to/python/instances", githubClient);
 
-// Create multiple instances
-var runtime312 = await manager.GetOrCreateInstanceAsync("3.12.0", buildDate: "20240115");
-var runtime311 = await manager.GetOrCreateInstanceAsync("3.11.5", buildDate: "20240210");
+// Exact version matching - matches exactly "3.12.5"
+var runtime312 = await manager.GetOrCreateInstanceAsync("3.12.5");
+
+// Partial version matching - finds latest patch version (e.g., "3.12.19")
+var runtime312Latest = await manager.GetOrCreateInstanceAsync("3.12");
+
+// With build date (DateTime? - was string? in older versions)
+var runtime311 = await manager.GetOrCreateInstanceAsync(
+    "3.11.5", 
+    buildDate: new DateTime(2024, 2, 10));
 
 // List all instances
 var instances = manager.ListInstances();
 foreach (var instance in instances)
 {
-    Console.WriteLine($"Python {instance.PythonVersion} (Build: {instance.BuildDate})");
+    Console.WriteLine($"Python {instance.PythonVersion} (Build: {instance.BuildDate:yyyy-MM-dd})");
 }
 
 // Delete an instance
-await manager.DeleteInstanceAsync("3.11.5", "20240210");
+await manager.DeleteInstanceAsync("3.11.5", new DateTime(2024, 2, 10));
 ```
 
 ### Package Installation Examples
@@ -283,6 +294,18 @@ The library automatically detects your platform and downloads the appropriate Py
 - **Linux**: x64, ARM64, ARMv7 (GNU libc and musl)
 - **macOS**: Intel (x64), Apple Silicon (ARM64)
 
+## Archive Format Support
+
+The library supports multiple archive formats for Python distributions:
+
+- **`.zip`** - Standard ZIP archives (Windows, cross-platform)
+- **`.tar.gz`** - Gzip-compressed tar archives (Linux, macOS)
+- **`.tar.bz2`** - Bzip2-compressed tar archives (Linux, macOS)
+- **`.tar.bz`** - Bzip-compressed tar archives (Linux, macOS)
+- **`.tar.zst`** - Zstandard-compressed tar archives (Linux, macOS)
+
+Archive extraction uses system tools (`tar` command) where available. The library automatically detects and handles the appropriate format based on the downloaded asset.
+
 ## Architecture
 
 ### Manager Classes
@@ -333,12 +356,16 @@ specifieddir/
 
 ### BasePythonManager
 
-- `GetOrCreateInstanceAsync(pythonVersion, buildDate?)` - Get or create a Python runtime instance
-- `GetOrCreateInstance(pythonVersion, buildDate?)` - Synchronous version
-- `DeleteInstanceAsync(pythonVersion, buildDate?)` - Delete an instance
+- `GetOrCreateInstanceAsync(pythonVersion?, buildDate?, cancellationToken?)` - Get or create a Python runtime instance
+  - `pythonVersion`: Optional. If null, uses default from configuration or "3.12"
+  - Supports partial versions (e.g., "3.12" finds latest patch like "3.12.19")
+  - Exact versions (e.g., "3.12.5") match exactly
+- `GetOrCreateInstance(pythonVersion?, buildDate?)` - Synchronous version
+- `DeleteInstanceAsync(pythonVersion, buildDate?, cancellationToken?)` - Delete an instance
+  - `buildDate`: `DateTime?` - Optional build date (was string? in older versions)
 - `DeleteInstance(pythonVersion, buildDate?)` - Synchronous version
 - `ListInstances()` - List all cached instances
-- `ListAvailableVersionsAsync(releaseTag?)` - List available versions from GitHub
+- `ListAvailableVersionsAsync(releaseTag?, cancellationToken?)` - List available versions from GitHub
 - `ListAvailableVersions(releaseTag?)` - Synchronous version
 
 ### BasePythonRuntime

@@ -68,6 +68,17 @@ var runtime = await manager.GetOrCreateInstanceAsync(); // Uses 3.12
 ```csharp
 // Get or download Python 3.12.0 (downloads if not already present)
 var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
+
+// Or use partial version to get latest patch (e.g., "3.12" finds "3.12.19")
+var runtimeLatest = await manager.GetOrCreateInstanceAsync("3.12");
+
+// Or use default version from configuration (if pythonVersion is null)
+var runtimeDefault = await manager.GetOrCreateInstanceAsync();
+
+// With build date (DateTime? - was string? in older versions)
+var runtimeWithDate = await manager.GetOrCreateInstanceAsync(
+    "3.12.0",
+    buildDate: new DateTime(2024, 1, 15));
 ```
 
 ### 4. Execute Python Code

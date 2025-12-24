@@ -59,3 +59,4 @@ catch (PlatformNotSupportedException ex)
 - [PythonInstallationException](./PythonInstallationException.md) - Base exception class
 - [PlatformInfo](../Models/PlatformInfo.md) - Platform information model
 
+

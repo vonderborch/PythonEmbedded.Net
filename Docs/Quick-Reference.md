@@ -249,8 +249,9 @@ var result = await runtime.ExecuteCommandAsync(
 ### IPythonManager
 
 ```csharp
-Task<IPythonRuntime> GetOrCreateInstanceAsync(string pythonVersion, DateTime? buildDate = null, CancellationToken cancellationToken = default)
-IPythonRuntime GetOrCreateInstance(string pythonVersion, DateTime? buildDate = null)
+// pythonVersion is now optional - uses default from configuration or "3.12" if null
+Task<IPythonRuntime> GetOrCreateInstanceAsync(string? pythonVersion = null, DateTime? buildDate = null, CancellationToken cancellationToken = default)
+IPythonRuntime GetOrCreateInstance(string? pythonVersion = null, DateTime? buildDate = null)
 Task<bool> DeleteInstanceAsync(string pythonVersion, DateTime? buildDate = null, CancellationToken cancellationToken = default)
 bool DeleteInstance(string pythonVersion, DateTime? buildDate = null)
 IReadOnlyList<InstanceMetadata> ListInstances()
@@ -303,9 +304,14 @@ public record PythonExecutionResult(
 
 ## Version Format
 
-- Full version: `"3.12.0"`
-- Minor version: `"3.12"` (finds latest patch version, e.g., "3.12.19")
-- With build date: `GetOrCreateInstanceAsync("3.12.0", buildDate: new DateTime(2024, 1, 15))`
+- **Full version**: `"3.12.0"` - Matches exactly this version
+- **Partial version**: `"3.12"` - Finds the latest patch version (e.g., "3.12.19")
+  - Works for both local instances and when downloading from GitHub
+  - If multiple patch versions exist locally, returns the highest patch version
+- **With build date**: `GetOrCreateInstanceAsync("3.12.0", buildDate: new DateTime(2024, 1, 15))`
+  - `buildDate` is now `DateTime?` (was `string?` in older versions)
+  - If specified, finds the first release on or after this date
+  - If null, uses the latest available release
 
 ## See Also
 

@@ -1682,11 +1682,13 @@ public abstract class BasePythonRuntime
             FileName = PythonExecutablePath,
             WorkingDirectory = workingDirectory ?? WorkingDirectory,
             UseShellExecute = false,
-            RedirectStandardInput = stdinHandler != null,
-            RedirectStandardOutput = stdoutHandler != null,
-            RedirectStandardError = stderrHandler != null,
+            RedirectStandardInput = stdinHandler is not null,
+            // Always redirect output/error to capture for result, even if no handlers provided
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
             CreateNoWindow = true,
-            StandardInputEncoding = Encoding.UTF8,
+            StandardInputEncoding = stdinHandler is not null ? Encoding.UTF8 : null,
+            // Always use UTF-8 encoding for output/error streams
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8
         };

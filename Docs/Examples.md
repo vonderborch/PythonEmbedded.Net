@@ -355,6 +355,7 @@ try
 catch (InstanceNotFoundException ex)
 {
     Console.WriteLine($"Python version not found: {ex.PythonVersion}");
+    // BuildDate is now DateTime? instead of string?
     Console.WriteLine($"Build date: {ex.BuildDate?.ToString("yyyy-MM-dd") ?? "latest"}");
 }
 ```
@@ -442,6 +443,49 @@ var result312 = await python312.ExecuteCommandAsync("print('Python 3.12')");
 var result311 = await python311.ExecuteCommandAsync("print('Python 3.11')");
 ```
 
+### Version Matching Behavior
+
+PythonEmbedded.Net supports two types of version matching:
+
+**Exact Version Matching:**
+When you specify a full version (Major.Minor.Patch), it matches exactly:
+
+```csharp
+// Matches exactly Python 3.12.5
+var runtime = await manager.GetOrCreateInstanceAsync("3.12.5");
+```
+
+**Partial Version Matching:**
+When you specify only Major.Minor, it finds the latest patch version:
+
+```csharp
+// Finds the latest patch version (e.g., 3.12.19)
+var runtime = await manager.GetOrCreateInstanceAsync("3.12");
+
+// This works for both local instances and when downloading from GitHub
+// If you have 3.12.5, 3.12.10, and 3.12.19 installed locally, it will use 3.12.19
+// If downloading, it will get the latest patch version available
+```
+
+### Using Build Dates
+
+Build dates are now `DateTime?` objects (previously strings):
+
+```csharp
+// Get a specific build date
+var runtime = await manager.GetOrCreateInstanceAsync(
+    "3.12.0", 
+    buildDate: new DateTime(2024, 1, 15));
+
+// Get the latest build (no build date specified)
+var latest = await manager.GetOrCreateInstanceAsync("3.12.0");
+
+// Find first release on or after a specific date
+var runtimeAfterDate = await manager.GetOrCreateInstanceAsync(
+    "3.12.0",
+    buildDate: new DateTime(2024, 2, 1)); // Gets first release >= 2024-02-01
+```
+
 ### Listing All Instances
 
 ```csharp
@@ -451,9 +495,9 @@ var instances = manager.ListInstances();
 foreach (var instance in instances)
 {
     Console.WriteLine($"Version: {instance.PythonVersion}");
-    Console.WriteLine($"Build Date: {instance.BuildDate:yyyy-MM-dd}");
+    Console.WriteLine($"Build Date: {instance.BuildDate:yyyy-MM-dd}"); // BuildDate is now DateTime
     Console.WriteLine($"Directory: {instance.Directory}");
-    Console.WriteLine($"Installed: {instance.InstallationDate}");
+    Console.WriteLine($"Installed: {instance.InstallationDate:yyyy-MM-dd HH:mm:ss}");
     Console.WriteLine();
 }
 ```

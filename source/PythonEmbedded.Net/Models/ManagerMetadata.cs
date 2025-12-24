@@ -1,3 +1,5 @@
+using PythonEmbedded.Net.Helpers;
+
 namespace PythonEmbedded.Net.Models;
 
 /// <summary>
@@ -34,6 +36,10 @@ public class ManagerMetadata
     /// Retrieves an instance of <see cref="InstanceMetadata"/> matching the specified Python version
     /// and optionally a specific build date. If no build date is provided, it attempts to find the
     /// latest build for the given Python version.
+    /// 
+    /// Version matching behavior:
+    /// - If an exact Major.Minor.Patch version is specified (e.g., "3.12.5"), matches exactly that version.
+    /// - If only Major.Minor is specified (e.g., "3.12"), finds the latest patch version among matching instances.
     /// </summary>
     /// <param name="pythonVersion">The version of Python to locate in the managed instances.</param>
     /// <param name="buildDate">
@@ -46,7 +52,70 @@ public class ManagerMetadata
     /// </returns>
     public InstanceMetadata? FindInstance(string pythonVersion, DateTime? buildDate = null)
     {
-        return this.Instances.FirstOrDefault(i => i.PythonVersion == pythonVersion && ((buildDate == null && i.WasLatestBuild) || (buildDate.HasValue && i.BuildDate.Date == buildDate.Value.Date)));
+        if (string.IsNullOrWhiteSpace(pythonVersion))
+            return null;
+
+        // Determine if this is a partial version (Major.Minor) or full version (Major.Minor.Patch)
+        var versionParts = pythonVersion.Split('.');
+        var isPartialVersion = versionParts.Length < 3;
+
+        if (isPartialVersion)
+        {
+            // For partial versions, find all instances matching Major.Minor and return the latest patch version
+            var (requestedMajor, requestedMinor, _) = VersionParser.ParseVersion(pythonVersion);
+            
+            var matchingInstances = this.Instances
+                .Where(i =>
+                {
+                    var (instanceMajor, instanceMinor, _) = VersionParser.ParseVersion(i.PythonVersion);
+                    var versionMatches = instanceMajor == requestedMajor && instanceMinor == requestedMinor;
+                    
+                    if (!versionMatches)
+                        return false;
+                    
+                    // Match build date if specified
+                    if (buildDate.HasValue)
+                        return i.BuildDate.Date == buildDate.Value.Date;
+                    
+                    // If no build date specified, include all matching instances (we'll pick the latest patch)
+                    return true;
+                })
+                .ToList();
+
+            if (!matchingInstances.Any())
+                return null;
+
+            // If build date is specified, return the one matching that date with the highest patch version
+            if (buildDate.HasValue)
+            {
+                return matchingInstances
+                    .OrderByDescending(i =>
+                    {
+                        var (_, _, patch) = VersionParser.ParseVersion(i.PythonVersion);
+                        return patch;
+                    })
+                    .FirstOrDefault();
+            }
+
+            // Otherwise, return the instance with the highest patch version (and prefer latest build if available)
+            return matchingInstances
+                .OrderByDescending(i =>
+                {
+                    var (_, _, patch) = VersionParser.ParseVersion(i.PythonVersion);
+                    return patch;
+                })
+                .ThenByDescending(i => i.WasLatestBuild ? 1 : 0)
+                .ThenByDescending(i => i.BuildDate)
+                .FirstOrDefault();
+        }
+        else
+        {
+            // For exact versions, match exactly
+            return this.Instances.FirstOrDefault(i => 
+                i.PythonVersion == pythonVersion && 
+                ((buildDate == null && i.WasLatestBuild) || 
+                 (buildDate.HasValue && i.BuildDate.Date == buildDate.Value.Date)));
+        }
     }
 
     /// <summary>

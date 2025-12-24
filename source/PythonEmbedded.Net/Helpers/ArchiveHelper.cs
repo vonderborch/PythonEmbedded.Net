@@ -8,6 +8,15 @@ namespace PythonEmbedded.Net.Helpers;
 /// </summary>
 internal static class ArchiveHelper
 {
+    private enum ArchiveType
+    {
+        Zip,
+        Tar,
+        TarGz,
+        TarBz,
+        TarBz2,
+        TarZst
+    }
     /// <summary>
     /// Extracts an archive to the specified destination directory.
     /// </summary>
@@ -29,16 +38,56 @@ internal static class ArchiveHelper
 
         Directory.CreateDirectory(destinationDirectory);
 
+        // Check for compound extensions first (e.g., .tar.gz, .tar.bz2)
+        var fileName = Path.GetFileName(archivePath).ToLowerInvariant();
         var extension = Path.GetExtension(archivePath).ToLowerInvariant();
+        
+        // Determine archive type based on file extension
+        ArchiveType archiveType;
+        if (fileName.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase))
+        {
+            archiveType = ArchiveType.TarGz;
+        }
+        else if (fileName.EndsWith(".tar.bz2", StringComparison.OrdinalIgnoreCase))
+        {
+            archiveType = ArchiveType.TarBz2;
+        }
+        else if (fileName.EndsWith(".tar.bz", StringComparison.OrdinalIgnoreCase))
+        {
+            archiveType = ArchiveType.TarBz;
+        }
+        else if (fileName.EndsWith(".tar.zst", StringComparison.OrdinalIgnoreCase))
+        {
+            archiveType = ArchiveType.TarZst;
+        }
+        else if (extension == ".zip")
+        {
+            archiveType = ArchiveType.Zip;
+        }
+        else if (extension == ".zst")
+        {
+            archiveType = ArchiveType.TarZst;
+        }
+        else if (extension == ".tar")
+        {
+            archiveType = ArchiveType.Tar;
+        }
+        else
+        {
+            throw new NotSupportedException($"Unsupported archive format: {extension} (file: {fileName})");
+        }
 
         try
         {
-            await (extension switch
+            await (archiveType switch
             {
-                ".zip" => ExtractZipAsync(archivePath, destinationDirectory, cancellationToken),
-                ".zst" or ".tar.zst" => ExtractTarZstAsync(archivePath, destinationDirectory, cancellationToken),
-                ".tar" => ExtractTarAsync(archivePath, destinationDirectory, cancellationToken),
-                _ => throw new NotSupportedException($"Unsupported archive format: {extension}")
+                ArchiveType.Zip => ExtractZipAsync(archivePath, destinationDirectory, cancellationToken),
+                ArchiveType.TarZst => ExtractTarZstAsync(archivePath, destinationDirectory, cancellationToken),
+                ArchiveType.TarGz => ExtractTarGzAsync(archivePath, destinationDirectory, cancellationToken),
+                ArchiveType.TarBz => ExtractTarBzAsync(archivePath, destinationDirectory, cancellationToken),
+                ArchiveType.TarBz2 => ExtractTarBz2Async(archivePath, destinationDirectory, cancellationToken),
+                ArchiveType.Tar => ExtractTarAsync(archivePath, destinationDirectory, cancellationToken),
+                _ => throw new NotSupportedException($"Unsupported archive type: {archiveType}")
             }).ConfigureAwait(false);
         }
         catch (Exception ex)
@@ -94,6 +143,51 @@ internal static class ArchiveHelper
         }
     }
 
+    private static async Task ExtractTarGzAsync(string archivePath, string destinationDirectory, CancellationToken cancellationToken)
+    {
+        // .tar.gz requires tar with gzip support (built-in on most systems)
+        if (await IsCommandAvailableAsync("tar").ConfigureAwait(false))
+        {
+            await ExtractTarGzUsingSystemToolsAsync(archivePath, destinationDirectory, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            throw new NotSupportedException(
+                "Extraction of .tar.gz archives requires tar system tool. " +
+                "Please install it or use a different archive format.");
+        }
+    }
+
+    private static async Task ExtractTarBzAsync(string archivePath, string destinationDirectory, CancellationToken cancellationToken)
+    {
+        // .tar.bz requires tar with bzip2 support
+        if (await IsCommandAvailableAsync("tar").ConfigureAwait(false))
+        {
+            await ExtractTarBzUsingSystemToolsAsync(archivePath, destinationDirectory, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            throw new NotSupportedException(
+                "Extraction of .tar.bz archives requires tar system tool. " +
+                "Please install it or use a different archive format.");
+        }
+    }
+
+    private static async Task ExtractTarBz2Async(string archivePath, string destinationDirectory, CancellationToken cancellationToken)
+    {
+        // .tar.bz2 requires tar with bzip2 support
+        if (await IsCommandAvailableAsync("tar").ConfigureAwait(false))
+        {
+            await ExtractTarBz2UsingSystemToolsAsync(archivePath, destinationDirectory, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            throw new NotSupportedException(
+                "Extraction of .tar.bz2 archives requires tar system tool. " +
+                "Please install it or use a different archive format.");
+        }
+    }
+
     private static async Task ExtractTarZstUsingSystemToolsAsync(
         string archivePath,
         string destinationDirectory,
@@ -121,6 +215,63 @@ internal static class ArchiveHelper
         {
             FileName = "tar",
             Arguments = $"-xf {archivePath} -C {destinationDirectory}",
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        await RunProcessAsync(processStartInfo, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task ExtractTarGzUsingSystemToolsAsync(
+        string archivePath,
+        string destinationDirectory,
+        CancellationToken cancellationToken)
+    {
+        // tar automatically detects gzip compression with -xzf
+        var processStartInfo = new ProcessStartInfo
+        {
+            FileName = "tar",
+            Arguments = $"-xzf {archivePath} -C {destinationDirectory}",
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        await RunProcessAsync(processStartInfo, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task ExtractTarBzUsingSystemToolsAsync(
+        string archivePath,
+        string destinationDirectory,
+        CancellationToken cancellationToken)
+    {
+        // tar automatically detects bzip2 compression with -xjf
+        var processStartInfo = new ProcessStartInfo
+        {
+            FileName = "tar",
+            Arguments = $"-xjf {archivePath} -C {destinationDirectory}",
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        await RunProcessAsync(processStartInfo, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task ExtractTarBz2UsingSystemToolsAsync(
+        string archivePath,
+        string destinationDirectory,
+        CancellationToken cancellationToken)
+    {
+        // tar automatically detects bzip2 compression with -xjf
+        var processStartInfo = new ProcessStartInfo
+        {
+            FileName = "tar",
+            Arguments = $"-xjf {archivePath} -C {destinationDirectory}",
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,

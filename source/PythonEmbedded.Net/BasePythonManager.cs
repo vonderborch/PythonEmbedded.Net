@@ -94,10 +94,8 @@ public abstract class BasePythonManager
         this._logger?.LogInformation("Getting or creating Python instance: Version={Version}, BuildDate={BuildDate}",
             pythonVersion, buildDate?.ToString("yyyy-MM-dd") ?? "latest");
         
-        // Normalize version
-        var normalizedVersion = VersionParser.NormalizeVersion(pythonVersion);
-        
-        var instance = this._metadata.FindInstance(normalizedVersion, buildDate);
+        // Search for existing instance using original version format (preserves partial vs exact matching)
+        var instance = this._metadata.FindInstance(pythonVersion, buildDate);
         if (instance is null)
         {
             // Download, Extract, and add instance
@@ -115,12 +113,12 @@ public abstract class BasePythonManager
                 throw;
             }
             
-            // Find the release asset
+            // Find the release asset (pass original version - GitHubReleaseHelper handles partial vs exact)
             this._logger?.LogInformation("Finding release asset for Python {Version} on platform {Platform}",
-                normalizedVersion, platform.TargetTriple);
-            var asset = await GitHubReleaseHelper.FindReleaseAssetAsync(
+                pythonVersion, platform.TargetTriple);
+            var (release, asset) = await GitHubReleaseHelper.FindReleaseAssetAsync(
                 this._gitHubClient,
-                normalizedVersion,
+                pythonVersion,
                 buildDate,
                 platform,
                 cancellationToken).ConfigureAwait(false);
@@ -128,19 +126,22 @@ public abstract class BasePythonManager
             if (asset == null)
             {
                 throw new InstanceNotFoundException(
-                    $"No release asset found for Python {normalizedVersion} and build date {buildDate?.ToString("yyyy-MM-dd") ?? "latest"}")
+                    $"No release asset found for Python {pythonVersion} and build date {buildDate?.ToString("yyyy-MM-dd") ?? "latest"}")
                 {
-                    PythonVersion = normalizedVersion,
+                    PythonVersion = pythonVersion,
                     BuildDate = buildDate
                 };
             }
             
             // Extract build date from release if not provided
-            DateTime actualBuildDate = buildDate ?? await ExtractBuildDateFromReleaseAsync(
-                normalizedVersion, asset, cancellationToken).ConfigureAwait(false);
+            DateTime actualBuildDate = buildDate ?? ExtractBuildDateFromTag(release.TagName);
             
-            // Create instance directory
-            string instanceDirectoryName = $"python-{normalizedVersion}-{actualBuildDate:yyyyMMdd}";
+            // Extract the actual version from the asset (will be full Major.Minor.Patch)
+            // This ensures we store the exact version that was downloaded
+            var actualVersion = GitHubReleaseHelper.ExtractVersionFromAssetName(asset.Name);
+            
+            // Create instance directory using the actual (normalized) version
+            string instanceDirectoryName = $"python-{actualVersion}-{actualBuildDate:yyyyMMdd}";
             string instanceDirectory = Path.Combine(this._rootDirectory, instanceDirectoryName);
             
             if (Directory.Exists(instanceDirectory))
@@ -235,9 +236,10 @@ public abstract class BasePythonManager
                 }
                 
                 // Create and save instance metadata
+                // Use actualVersion (extracted from asset) to store the exact version that was downloaded
                 var instanceMetadata = new InstanceMetadata
                 {
-                    PythonVersion = normalizedVersion,
+                    PythonVersion = actualVersion,
                     BuildDate = actualBuildDate,
                     WasLatestBuild = buildDate == null,
                     InstallationDate = DateTime.Now,
@@ -274,31 +276,6 @@ public abstract class BasePythonManager
         return runtime;
     }
     
-    private async Task<DateTime> ExtractBuildDateFromReleaseAsync(
-        string pythonVersion,
-        Octokit.ReleaseAsset asset,
-        CancellationToken cancellationToken)
-    {
-        // Use HTTP to search releases (more efficient than Octokit pagination for this operation)
-        // Search through releases to find which one contains this asset
-        var releases = await Helpers.GitHubHttpHelper.GetReleasesAsync(maxPages: 10, cancellationToken).ConfigureAwait(false);
-        
-        // Find the release that contains this asset
-        var release = releases.FirstOrDefault(r => 
-            r.Assets.Any(a => a.Id == asset.Id || a.Name == asset.Name));
-        
-        if (release != null)
-        {
-            return ExtractBuildDateFromTag(release.TagName);
-        }
-        
-        // Fallback: try to extract from asset name or use current date
-        this._logger?.LogWarning(
-            "Could not find release for asset {AssetName}. Using current date as build date.",
-            asset.Name);
-        return DateTime.Now;
-    }
-
     private static DateTime ExtractBuildDateFromTag(string tag)
     {
         // Extract build date from release tag (typically YYYYMMDD format)
@@ -486,8 +463,8 @@ public abstract class BasePythonManager
         if (string.IsNullOrWhiteSpace(pythonVersion))
             throw new ArgumentException("Python version cannot be null or empty.", nameof(pythonVersion));
 
-        var normalizedVersion = VersionParser.NormalizeVersion(pythonVersion);
-        return this._metadata.FindInstance(normalizedVersion, buildDate);
+        // Use original version format to preserve partial vs exact matching behavior
+        return this._metadata.FindInstance(pythonVersion, buildDate);
     }
 
     /// <summary>

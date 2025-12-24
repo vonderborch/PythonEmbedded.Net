@@ -429,7 +429,11 @@ public abstract class BasePythonRootRuntime : BasePythonRuntime
         {
             System.IO.Compression.ZipFile.CreateFromDirectory(venvPath, outputPath);
         }
-        else if (extension == ".tar" || extension == ".tar.gz" || extension.EndsWith(".tar.zst", StringComparison.OrdinalIgnoreCase))
+        else if (extension == ".tar" || 
+                 extension == ".tar.gz" || 
+                 extension == ".tar.bz" ||
+                 extension == ".tar.bz2" ||
+                 extension.EndsWith(".tar.zst", StringComparison.OrdinalIgnoreCase))
         {
             // For tar archives, we'll use ArchiveHelper's extraction logic in reverse
             // Since ArchiveHelper uses external tools, we'll use a simpler approach with System.IO.Compression
