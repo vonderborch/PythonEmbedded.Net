@@ -55,16 +55,17 @@ dotnet test
 ```
 PythonEmbedded.Net/
 ├── source/
-│   └── PythonEmbedded.Net/        # Main library source
-│       ├── Exceptions/            # Custom exceptions
-│       ├── Helpers/               # Utility classes
-│       ├── Models/                # Data models
-│       ├── Services/              # Service implementations
-│       └── *.cs                   # Core classes
+│   └── PythonEmbedded.Net/                      # Main library source
+│       ├── Exceptions/                          # Custom exceptions
+│       ├── Helpers/                             # Utility classes
+│       ├── Models/                              # Data models
+│       ├── Services/                            # Service implementations
+│       └── *.cs                                 # Core classes
 ├── test/
 │   └── automated/
-│       └── PythonEmbedded.Net.Test/  # Unit and integration tests
-└── Docs/                          # Documentation
+│       ├── PythonEmbedded.Net.IntegrationTest/  # Integration tests
+│       └── PythonEmbedded.Net.Test/             # Unit tests
+└── Docs/                                        # Documentation
 ```
 
 ## Coding Standards

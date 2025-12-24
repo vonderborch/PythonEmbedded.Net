@@ -343,13 +343,15 @@ The library uses abstract base classes for extensibility:
 ### Directory Structure
 
 ```
-specifieddir/
-├── manager_metadata.json          # Central metadata file
+manager_directory/
 └── python-{version}-{buildDate}/   # Instance directory
-    ├── venvs/                      # Virtual environments
+    ├── python/                      # Python installation files
+    ├── venvs/                       # Virtual environments
     │   └── {venv_name}/
-    ├── python_instance/            # Python installation files
-    └── instance_metadata.json      # Instance metadata
+    │       ├── bin/ (or Scripts/)
+    │       ├── lib/
+    │       └── pyvenv.cfg
+    └── instance_metadata.json       # Instance-specific metadata
 ```
 
 ## API Overview

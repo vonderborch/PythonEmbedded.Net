@@ -109,6 +109,8 @@ if (InstanceMetadata.Exists(instanceDirectory))
 
 ## Related Types
 
-- [ManagerMetadata](./ManagerMetadata.md) - Manages collections of InstanceMetadata
+- [ManagerMetadata](./ManagerMetadata.md) - In-memory collection that manages multiple InstanceMetadata objects (loaded from individual instance directories)
 - [BasePythonManager](../Managers/BasePythonManager.md) - Uses InstanceMetadata to track instances
+
+**Note**: Each Python instance has its own `instance_metadata.json` file in its directory. There is no central metadata file. The `ManagerMetadata` class is an in-memory collection that loads metadata from individual instance directories.
 

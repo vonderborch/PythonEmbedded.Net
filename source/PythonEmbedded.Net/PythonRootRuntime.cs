@@ -30,9 +30,10 @@ public class PythonRootRuntime : BasePythonRootRuntime
     {
         get
         {
+            var pythonDirectory = Path.Combine(_instanceMetadata.Directory, "python");
             return RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-                ? Path.Combine(_instanceMetadata.Directory, "python.exe")
-                : Path.Combine(_instanceMetadata.Directory, "bin", "python3");
+                ? Path.Combine(pythonDirectory, "python.exe")
+                : Path.Combine(pythonDirectory, "bin", "python3");
         }
     }
 

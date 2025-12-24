@@ -87,3 +87,4 @@ Console.WriteLine(result.StandardOutput); // "Hello, World!"
 - [PythonNetManager](./PythonNetManager.md) - Alternative manager using Python.NET
 
 
+

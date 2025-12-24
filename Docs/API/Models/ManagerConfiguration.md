@@ -86,3 +86,4 @@ var manager = new PythonManager("./instances", githubClient, configuration: conf
 - [BasePythonManager](../Managers/BasePythonManager.md) - Uses ManagerConfiguration
 
 
+

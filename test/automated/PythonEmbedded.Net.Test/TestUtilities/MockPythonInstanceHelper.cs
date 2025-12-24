@@ -26,15 +26,19 @@ public static class MockPythonInstanceHelper
         string instanceDirectory = Path.Combine(baseDirectory, $"python-{pythonVersion}-{actualBuildDate:yyyyMMdd}");
         Directory.CreateDirectory(instanceDirectory);
 
-        // Create Python executable path structure
+        // Create python/ subdirectory for Python installation
+        string pythonSubdirectory = Path.Combine(instanceDirectory, "python");
+        Directory.CreateDirectory(pythonSubdirectory);
+
+        // Create Python executable path structure in python/ subdirectory
         string pythonExe;
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            pythonExe = Path.Combine(instanceDirectory, "python.exe");
+            pythonExe = Path.Combine(pythonSubdirectory, "python.exe");
         }
         else
         {
-            string binDir = Path.Combine(instanceDirectory, "bin");
+            string binDir = Path.Combine(pythonSubdirectory, "bin");
             Directory.CreateDirectory(binDir);
             pythonExe = Path.Combine(binDir, "python3");
         }
@@ -43,15 +47,17 @@ public static class MockPythonInstanceHelper
         File.WriteAllText(pythonExe, "#!/bin/bash\necho 'Python mock'\n");
 
         // Create instance metadata
+        // Directory points to instance directory (not python subdirectory)
         var metadata = new InstanceMetadata
         {
             PythonVersion = pythonVersion,
             BuildDate = actualBuildDate,
             WasLatestBuild = false,
             InstallationDate = DateTime.Now,
-            Directory = instanceDirectory
+            Directory = instanceDirectory  // Instance directory, not python subdirectory
         };
 
+        // Save metadata to instance directory (not python subdirectory)
         metadata.Save(instanceDirectory);
 
         return metadata;

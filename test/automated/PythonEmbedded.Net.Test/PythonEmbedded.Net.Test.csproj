@@ -11,8 +11,8 @@
         <Configurations>Debug;Release</Configurations>
         <Platforms>AnyCPU</Platforms>
         <ApplicationIcon>..\..\..\logo.ico</ApplicationIcon>
-        <AssemblyVersion>1.2.1.22</AssemblyVersion>
-        <FileVersion>1.2.1.22</FileVersion>
+        <AssemblyVersion>1.2.2.25</AssemblyVersion>
+        <FileVersion>1.2.2.25</FileVersion>
     </PropertyGroup>
 
     <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">

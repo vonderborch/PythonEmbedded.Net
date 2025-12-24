@@ -89,3 +89,4 @@ Console.WriteLine(result.StandardOutput); // "Hello, World!"
 - [PythonManager](./PythonManager.md) - Alternative manager using subprocess execution
 
 
+

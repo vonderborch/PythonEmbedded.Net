@@ -38,9 +38,10 @@ public class PythonNetRootRuntime : BasePythonRootRuntime, IDisposable
     {
         get
         {
+            var pythonDirectory = Path.Combine(_instanceMetadata.Directory, "python");
             return RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-                ? Path.Combine(_instanceMetadata.Directory, "python.exe")
-                : Path.Combine(_instanceMetadata.Directory, "bin", "python3");
+                ? Path.Combine(pythonDirectory, "python.exe")
+                : Path.Combine(pythonDirectory, "bin", "python3");
         }
     }
 
@@ -115,15 +116,16 @@ public class PythonNetRootRuntime : BasePythonRootRuntime, IDisposable
                 if (!PythonEngine.IsInitialized)
                 {
                     // Set Python DLL path - Python.NET needs to know where the Python DLL is located
+                    var pythonDirectory = Path.Combine(_instanceMetadata.Directory, "python");
                     string pythonDllPath = FindPythonDllPath();
                     if (!string.IsNullOrEmpty(pythonDllPath))
                     {
-                        PythonEngine.PythonHome = _instanceMetadata.Directory;
+                        PythonEngine.PythonHome = pythonDirectory;
                         Runtime.PythonDLL = pythonDllPath;
                     }
 
                     PythonEngine.Initialize();
-                    this.Logger?.LogInformation("Python.NET runtime initialized for Python instance: {Directory}", _instanceMetadata.Directory);
+                    this.Logger?.LogInformation("Python.NET runtime initialized for Python instance: {Directory}", pythonDirectory);
                 }
 
                 _pythonNetInitialized = true;
@@ -145,13 +147,15 @@ public class PythonNetRootRuntime : BasePythonRootRuntime, IDisposable
     /// </summary>
     private string FindPythonDllPath()
     {
+        var pythonDirectory = Path.Combine(_instanceMetadata.Directory, "python");
+        
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            // On Windows, look for python3x.dll in the root directory
+            // On Windows, look for python3x.dll in the python directory
             string[] possibleDllNames = ["python3.dll", "python310.dll", "python311.dll", "python312.dll", "python313.dll"];
             foreach (var dllName in possibleDllNames)
             {
-                string dllPath = Path.Combine(_instanceMetadata.Directory, dllName);
+                string dllPath = Path.Combine(pythonDirectory, dllName);
                 if (File.Exists(dllPath))
                 {
                     return dllPath;
@@ -162,7 +166,7 @@ public class PythonNetRootRuntime : BasePythonRootRuntime, IDisposable
         {
             // On Unix-like systems, Python.NET typically finds the library automatically
             // but we can try to locate it in common locations
-            string libPath = Path.Combine(_instanceMetadata.Directory, "lib");
+            string libPath = Path.Combine(pythonDirectory, "lib");
             if (Directory.Exists(libPath))
             {
                 // Look for libpython*.so files

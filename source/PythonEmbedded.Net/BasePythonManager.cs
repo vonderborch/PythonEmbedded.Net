@@ -179,21 +179,39 @@ public abstract class BasePythonManager
                 this._logger?.LogDebug("Extraction completed");
                 
                 // Find the actual Python installation directory (might be nested)
-                string pythonInstallPath = FindPythonInstallPath(instanceDirectory);
+                string extractedPythonPath = FindPythonInstallPath(instanceDirectory);
                 
                 // Verify the extraction
-                if (!ArchiveHelper.VerifyExtractedInstallation(pythonInstallPath))
+                if (!ArchiveHelper.VerifyExtractedInstallation(extractedPythonPath))
                 {
                     throw new PythonInstallationException(
-                        $"Extracted Python installation verification failed for {pythonInstallPath}. " +
+                        $"Extracted Python installation verification failed for {extractedPythonPath}. " +
                         "Required files or directories not found in expected locations. " +
                         "The archive may be corrupted or incomplete.");
                 }
                 
                 this._logger?.LogDebug("Extracted installation verified successfully");
                 
+                // Move Python installation to instanceDirectory/python/ subdirectory
+                string pythonSubdirectory = Path.Combine(instanceDirectory, "python");
+                if (extractedPythonPath != pythonSubdirectory)
+                {
+                    this._logger?.LogInformation("Moving Python installation from {Source} to {Target}", 
+                        extractedPythonPath, pythonSubdirectory);
+                    
+                    // If python subdirectory already exists, remove it
+                    if (Directory.Exists(pythonSubdirectory))
+                    {
+                        Directory.Delete(pythonSubdirectory, true);
+                    }
+                    
+                    // Move the extracted Python installation to the python subdirectory
+                    Directory.Move(extractedPythonPath, pythonSubdirectory);
+                    this._logger?.LogDebug("Python installation moved successfully");
+                }
+                
                 // Additional verification: Try to execute Python to ensure it actually works
-                string pythonExePath = FindPythonExecutablePath(pythonInstallPath);
+                string pythonExePath = FindPythonExecutablePath(pythonSubdirectory);
                 if (!string.IsNullOrEmpty(pythonExePath))
                 {
                     try
@@ -237,17 +255,19 @@ public abstract class BasePythonManager
                 
                 // Create and save instance metadata
                 // Use actualVersion (extracted from asset) to store the exact version that was downloaded
+                // Directory points to the instance directory (not the python subdirectory)
                 var instanceMetadata = new InstanceMetadata
                 {
                     PythonVersion = actualVersion,
                     BuildDate = actualBuildDate,
                     WasLatestBuild = buildDate == null,
                     InstallationDate = DateTime.Now,
-                    Directory = pythonInstallPath
+                    Directory = instanceDirectory  // Instance directory, not python subdirectory
                 };
                 
-                instanceMetadata.Save(pythonInstallPath);
-                this._logger?.LogInformation("Saved instance metadata to: {Path}", pythonInstallPath);
+                // Save metadata to instance directory (not python subdirectory)
+                instanceMetadata.Save(instanceDirectory);
+                this._logger?.LogInformation("Saved instance metadata to: {Path}", instanceDirectory);
                 
                 // Add to metadata instances list
                 this._metadata.Instances.Add(instanceMetadata);
@@ -513,7 +533,9 @@ public abstract class BasePythonManager
         if (instance == null || string.IsNullOrWhiteSpace(instance.Directory))
             return false;
 
-        return ArchiveHelper.VerifyExtractedInstallation(instance.Directory);
+        // Check the python/ subdirectory for the Python installation
+        var pythonDirectory = Path.Combine(instance.Directory, "python");
+        return ArchiveHelper.VerifyExtractedInstallation(pythonDirectory);
     }
 
     /// <summary>
@@ -865,58 +887,100 @@ public abstract class BasePythonManager
                 await ArchiveHelper.ExtractAsync(archivePath, tempDir, cancellationToken).ConfigureAwait(false);
             }
 
-            // Find Python installation path in extracted directory
-            var pythonInstallPath = FindPythonInstallPath(tempDir);
-
-            // Try to load instance metadata
+            // Check if the extracted directory has the new structure (instance_metadata.json at root, python/ subdirectory)
+            var rootMetadataFile = Path.Combine(tempDir, "instance_metadata.json");
+            var pythonSubdirectory = Path.Combine(tempDir, "python");
+            bool hasNewStructure = File.Exists(rootMetadataFile) && Directory.Exists(pythonSubdirectory);
+            
             InstanceMetadata? importedMetadata = null;
-            var metadataFile = Path.Combine(pythonInstallPath, "instance_metadata.json");
-            if (File.Exists(metadataFile))
+            string instanceDirectoryPath;
+            
+            if (hasNewStructure)
             {
-                importedMetadata = InstanceMetadata.Load(pythonInstallPath);
+                // New structure: metadata at root, python/ subdirectory
+                this._logger?.LogInformation("Detected new directory structure in imported archive");
+                importedMetadata = InstanceMetadata.Load(tempDir);
+                instanceDirectoryPath = tempDir;
             }
-
-            if (importedMetadata == null)
+            else
             {
-                // Try to extract version from Python executable
-                var pythonExePath = FindPythonExecutablePath(pythonInstallPath);
-                if (string.IsNullOrEmpty(pythonExePath))
+                // Old structure: find Python installation and reorganize
+                this._logger?.LogInformation("Detected old directory structure in imported archive, reorganizing");
+                var pythonInstallPath = FindPythonInstallPath(tempDir);
+                
+                // Try to load instance metadata from old location
+                var oldMetadataFile = Path.Combine(pythonInstallPath, "instance_metadata.json");
+                if (File.Exists(oldMetadataFile))
                 {
-                    throw new PythonInstallationException("Could not find Python executable in imported archive");
+                    importedMetadata = InstanceMetadata.Load(pythonInstallPath);
                 }
 
-                // Create a temporary runtime to get version info
-                var tempMetadata = new InstanceMetadata
+                if (importedMetadata == null)
                 {
-                    PythonVersion = "unknown",
-                    BuildDate = DateTime.Now,
-                    Directory = pythonInstallPath ?? tempDir
-                };
-                var tempRuntime = GetPythonRuntimeForInstance(tempMetadata);
-                var versionInfo = tempRuntime.GetPythonVersionInfo();
+                    // Try to extract version from Python executable
+                    var pythonExePath = FindPythonExecutablePath(pythonInstallPath);
+                    if (string.IsNullOrEmpty(pythonExePath))
+                    {
+                        throw new PythonInstallationException("Could not find Python executable in imported archive");
+                    }
 
-                // Parse version from output
-                var versionMatch = System.Text.RegularExpressions.Regex.Match(versionInfo, @"(\d+\.\d+\.\d+)");
-                var detectedVersion = versionMatch.Success ? versionMatch.Groups[1].Value : "unknown";
+                    // Create a temporary runtime to get version info
+                    var tempMetadata = new InstanceMetadata
+                    {
+                        PythonVersion = "unknown",
+                        BuildDate = DateTime.Now,
+                        Directory = pythonInstallPath
+                    };
+                    var tempRuntime = GetPythonRuntimeForInstance(tempMetadata);
+                    var versionInfo = tempRuntime.GetPythonVersionInfo();
 
-                importedMetadata = new InstanceMetadata
+                    // Parse version from output
+                    var versionMatch = System.Text.RegularExpressions.Regex.Match(versionInfo, @"(\d+\.\d+\.\d+)");
+                    var detectedVersion = versionMatch.Success ? versionMatch.Groups[1].Value : "unknown";
+
+                    importedMetadata = new InstanceMetadata
+                    {
+                        PythonVersion = detectedVersion,
+                        BuildDate = DateTime.Now,
+                        Directory = tempDir,
+                        InstallationDate = DateTime.Now,
+                        WasLatestBuild = false
+                    };
+                }
+
+                // Reorganize to new structure: move Python to python/ subdirectory
+                if (pythonInstallPath != pythonSubdirectory)
                 {
-                    PythonVersion = detectedVersion,
-                    BuildDate = DateTime.Now,
-                    Directory = pythonInstallPath ?? tempDir,
-                    InstallationDate = DateTime.Now,
-                    WasLatestBuild = false
-                };
+                    if (Directory.Exists(pythonSubdirectory))
+                    {
+                        Directory.Delete(pythonSubdirectory, true);
+                    }
+                    Directory.Move(pythonInstallPath, pythonSubdirectory);
+                    this._logger?.LogInformation("Reorganized Python installation to python/ subdirectory");
+                }
+                
+                instanceDirectoryPath = tempDir;
             }
 
-            // Move to final location
+            // Ensure we have metadata (should never be null at this point, but check for safety)
+            if (importedMetadata == null)
+            {
+                throw new PythonInstallationException("Failed to load or create instance metadata from imported archive");
+            }
+
+            // Determine final path
             var finalPath = Path.Combine(_rootDirectory, $"python-{importedMetadata.PythonVersion}-{importedMetadata.BuildDate:yyyyMMdd}");
             if (Directory.Exists(finalPath))
             {
                 throw new InvalidOperationException($"Instance already exists at: {finalPath}");
             }
 
-            Directory.Move(pythonInstallPath, finalPath);
+            // Move to final location
+            if (instanceDirectoryPath != finalPath)
+            {
+                Directory.Move(instanceDirectoryPath, finalPath);
+            }
+            
             importedMetadata.Directory = finalPath;
             importedMetadata.Save(finalPath);
 

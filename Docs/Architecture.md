@@ -95,7 +95,7 @@ Central manager that handles:
 - **Instance Discovery**: Finds existing instances from metadata
 - **Download Coordination**: Uses `GitHubReleaseHelper` to find and download distributions from [python-build-standalone](https://github.com/astral-sh/python-build-standalone)
 - **Extraction Management**: Uses `ArchiveHelper` to extract downloaded archives
-- **Metadata Tracking**: Maintains `ManagerMetadata` for instance tracking
+- **Metadata Tracking**: Maintains in-memory `ManagerMetadata` collection loaded from individual instance metadata files
 
 > **Note**: This library utilizes [python-build-standalone](https://github.com/astral-sh/python-build-standalone) by [astral-sh](https://github.com/astral-sh) for providing redistributable Python distributions. We are not associated with astral-sh, but we thank them for their fantastic work.
 
@@ -169,15 +169,17 @@ GetOrCreateVirtualEnvironmentAsync()
 
 ```
 manager_directory/
-├── manager_metadata.json          # Central metadata
-└── python-{version}-{buildDate}/   # Instance directories
-    ├── venvs/                      # Virtual environments
+└── python-{version}-{buildDate}/   # Instance directory
+    ├── python/                      # Python installation files
+    ├── venvs/                       # Virtual environments
     │   └── {venv_name}/
     │       ├── bin/ (or Scripts/)
     │       ├── lib/
     │       └── pyvenv.cfg
-    └── instance_metadata.json      # Instance-specific metadata
+    └── instance_metadata.json       # Instance-specific metadata
 ```
+
+**Note**: The `ManagerMetadata` class is an in-memory collection that loads instance metadata from individual `instance_metadata.json` files in each instance directory. There is no central metadata file.
 
 ## Resource Management
 
