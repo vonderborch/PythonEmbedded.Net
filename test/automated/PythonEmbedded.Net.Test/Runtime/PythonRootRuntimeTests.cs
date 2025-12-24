@@ -19,7 +19,7 @@ public class PythonRootRuntimeTests
     public void SetUp()
     {
         _testDirectory = TestDirectoryHelper.CreateTestDirectory("PythonRootRuntime");
-        _instanceMetadata = MockPythonInstanceHelper.CreateMockPythonInstance(_testDirectory, "3.12.0", "20240115");
+        _instanceMetadata = MockPythonInstanceHelper.CreateMockPythonInstance(_testDirectory, "3.12.0", new DateTime(2024, 1, 15));
     }
 
     [TearDown]

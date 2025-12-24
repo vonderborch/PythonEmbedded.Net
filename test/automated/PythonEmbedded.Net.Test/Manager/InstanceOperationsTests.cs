@@ -1,3 +1,6 @@
+// Integration tests that require GitHub API access have been moved to:
+// test/automated/PythonEmbedded.Net.IntegrationTest/Manager/InstanceOperationsIntegrationTests.cs
+
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using Octokit;
@@ -7,10 +10,9 @@ using PythonEmbedded.Net.Test.TestUtilities;
 namespace PythonEmbedded.Net.Test.Manager;
 
 /// <summary>
-/// Integration tests for instance export and import operations.
+/// Unit tests for instance operations that don't require GitHub API.
 /// </summary>
 [TestFixture]
-[Category("Integration")]
 public class InstanceOperationsTests
 {
     private string _testDirectory = null!;
@@ -31,59 +33,24 @@ public class InstanceOperationsTests
     }
 
     [Test]
-    [Category("Integration")]
-    public async Task ExportInstance_ExportsSuccessfully()
+    public void CheckDiskSpace_ReturnsCorrectResult()
     {
-        // Create an instance
-        var runtime = await _manager.GetOrCreateInstanceAsync("3.12");
-        
-        // Export it
-        var exportPath = Path.Combine(_testDirectory, "instance_export.zip");
-        var resultPath = await _manager.ExportInstanceAsync("3.12", exportPath);
-        
-        // Verify the archive was created
-        Assert.That(File.Exists(resultPath), Is.True);
-    }
-
-    [Test]
-    [Category("Integration")]
-    public async Task CheckDiskSpace_ReturnsCorrectResult()
-    {
+        // This test doesn't require GitHub API - it just checks disk space
         var hasSpace = _manager.CheckDiskSpace(1024L * 1024 * 1024); // 1 GB
         
         Assert.That(hasSpace, Is.True); // Should have at least 1GB free
     }
 
     [Test]
-    [Category("Integration")]
-    public async Task TestNetworkConnectivity_ReturnsResult()
+    public void GetSystemRequirements_ReturnsRequirements()
     {
-        var isConnected = await _manager.TestNetworkConnectivityAsync();
-        
-        // May or may not be connected, but should not throw
-        Assert.That(true, Is.True);
-    }
-
-    [Test]
-    [Category("Integration")]
-    public async Task GetSystemRequirements_ReturnsRequirements()
-    {
+        // This test doesn't require GitHub API - it just checks system info
         var requirements = _manager.GetSystemRequirements();
         
         Assert.That(requirements, Is.Not.Null);
         Assert.That(requirements.ContainsKey("Platform"), Is.True);
         Assert.That(requirements.ContainsKey("Architecture"), Is.True);
         Assert.That(requirements.ContainsKey("TargetTriple"), Is.True);
-    }
-
-    [Test]
-    [Category("Integration")]
-    public async Task DiagnoseIssues_ReturnsIssues()
-    {
-        var issues = await _manager.DiagnoseIssuesAsync();
-        
-        Assert.That(issues, Is.Not.Null);
-        // May or may not have issues, but should return a list
     }
 }
 

@@ -4,7 +4,7 @@ namespace PythonEmbedded.Net.Models;
 
 /// <summary>
 /// Data transfer object for GitHub release information.
-/// Used as a fallback when Octokit is unavailable.
+/// Used for HTTP-based operations that are more efficient than Octokit (e.g., date-based filtering).
 /// </summary>
 internal class GitHubReleaseDto
 {
@@ -23,7 +23,7 @@ internal class GitHubReleaseDto
 
 /// <summary>
 /// Data transfer object for GitHub release asset information.
-/// Used as a fallback when Octokit is unavailable.
+/// Used for HTTP-based operations that are more efficient than Octokit.
 /// </summary>
 internal class GitHubReleaseAssetDto
 {

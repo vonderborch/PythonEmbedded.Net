@@ -42,15 +42,15 @@ Gets the manager configuration.
 ```csharp
 Task<BasePythonRuntime> GetOrCreateInstanceAsync(
     string? pythonVersion = null,
-    string? buildDate = null,
+    DateTime? buildDate = null,
     CancellationToken cancellationToken = default)
 ```
 
 Gets or creates a Python runtime instance for the specified version. Downloads and installs the Python distribution if it doesn't exist. If `pythonVersion` is null, uses the default version from configuration.
 
 **Parameters:**
-- `pythonVersion`: The Python version (e.g., "3.12.0", "3.11"). If null, uses `Configuration.DefaultPythonVersion`.
-- `buildDate`: Optional build date in YYYYMMDD format. If null, uses the latest build.
+- `pythonVersion`: The Python version (e.g., "3.12.0", "3.11", "3.10"). Supports partial versions - if only major.minor is specified (e.g., "3.10"), finds the latest patch version (e.g., "3.10.19"). If null, uses `Configuration.DefaultPythonVersion`.
+- `buildDate`: Optional build date. If null, uses the latest build. If specified, finds the first release on or after this date.
 - `cancellationToken`: Cancellation token.
 
 **Returns:** A task that represents the asynchronous operation. The result is a `BasePythonRuntime` instance.
@@ -64,7 +64,7 @@ Gets or creates a Python runtime instance for the specified version. Downloads a
 ```csharp
 BasePythonRuntime GetOrCreateInstance(
     string? pythonVersion = null,
-    string? buildDate = null)
+    DateTime? buildDate = null)
 ```
 
 Synchronous version of `GetOrCreateInstanceAsync`.
@@ -74,7 +74,7 @@ Synchronous version of `GetOrCreateInstanceAsync`.
 ```csharp
 Task<bool> DeleteInstanceAsync(
     string pythonVersion,
-    string? buildDate = null,
+    DateTime? buildDate = null,
     CancellationToken cancellationToken = default)
 ```
 
@@ -111,7 +111,7 @@ Lists available Python versions from GitHub releases.
 ##### GetInstanceInfo
 
 ```csharp
-InstanceMetadata? GetInstanceInfo(string pythonVersion, string? buildDate = null)
+InstanceMetadata? GetInstanceInfo(string pythonVersion, DateTime? buildDate = null)
 ```
 
 Gets detailed information about a Python instance.
@@ -119,7 +119,7 @@ Gets detailed information about a Python instance.
 ##### GetInstanceSize
 
 ```csharp
-long GetInstanceSize(string pythonVersion, string? buildDate = null)
+long GetInstanceSize(string pythonVersion, DateTime? buildDate = null)
 ```
 
 Gets the disk size of a Python instance in bytes.
@@ -135,7 +135,7 @@ Gets the total disk usage across all managed instances in bytes.
 ##### ValidateInstanceIntegrity
 
 ```csharp
-bool ValidateInstanceIntegrity(string pythonVersion, string? buildDate = null)
+bool ValidateInstanceIntegrity(string pythonVersion, DateTime? buildDate = null)
 ```
 
 Validates the integrity of a Python instance.
@@ -161,7 +161,7 @@ Finds the best matching Python version from available versions.
 ```csharp
 Task<BasePythonRuntime> EnsurePythonVersionAsync(
     string pythonVersion,
-    string? buildDate = null,
+    DateTime? buildDate = null,
     CancellationToken cancellationToken = default)
 ```
 
@@ -205,7 +205,7 @@ Runs diagnostics and returns issues found.
 Task<string> ExportInstanceAsync(
     string pythonVersion,
     string outputPath,
-    string? buildDate = null,
+    DateTime? buildDate = null,
     CancellationToken cancellationToken = default)
 ```
 

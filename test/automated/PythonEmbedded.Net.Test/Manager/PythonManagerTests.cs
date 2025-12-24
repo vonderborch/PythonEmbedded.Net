@@ -72,7 +72,7 @@ public class PythonManagerTests
     {
         // Arrange
         var manager = new PythonManager(_testDirectory, _githubClient);
-        var metadata = MockPythonInstanceHelper.CreateMockPythonInstance(_testDirectory, "3.12.0", "20240115");
+        var metadata = MockPythonInstanceHelper.CreateMockPythonInstance(_testDirectory, "3.12.0", new DateTime(2024, 1, 15));
 
         // Act
         var runtime = manager.GetPythonRuntimeForInstance(metadata);

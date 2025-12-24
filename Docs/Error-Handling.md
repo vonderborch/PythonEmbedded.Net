@@ -41,7 +41,7 @@ Thrown when a requested Python instance cannot be found.
 
 **Properties:**
 - `PythonVersion` (string?): The Python version that was requested
-- `BuildDate` (string?): The build date that was requested
+- `BuildDate` (DateTime?): The build date that was requested
 
 **When thrown:**
 - `GetOrCreateInstanceAsync` cannot find a matching release on GitHub
@@ -56,7 +56,7 @@ try
 catch (InstanceNotFoundException ex)
 {
     Console.WriteLine($"Python {ex.PythonVersion} not found");
-    Console.WriteLine($"Build date: {ex.BuildDate ?? "latest"}");
+    Console.WriteLine($"Build date: {ex.BuildDate?.ToString("yyyy-MM-dd") ?? "latest"}");
 }
 ```
 
@@ -380,7 +380,7 @@ catch (InstanceNotFoundException ex)
     _logger.LogError(
         "Python instance not found: Version={Version}, BuildDate={BuildDate}",
         ex.PythonVersion,
-        ex.BuildDate);
+        ex.BuildDate?.ToString("yyyy-MM-dd") ?? "latest");
     throw;
 }
 ```

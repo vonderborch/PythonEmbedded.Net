@@ -19,10 +19,10 @@ Gets or sets the version of Python associated with the instance (e.g., "3.12.0")
 ### BuildDate
 
 ```csharp
-public string BuildDate { get; set; }
+public DateTime BuildDate { get; set; }
 ```
 
-Gets or sets the date indicating when the build was created (YYYYMMDD format).
+Gets or sets the date indicating when the build was created.
 
 ### WasLatestBuild
 

@@ -1,3 +1,6 @@
+// Integration tests that require GitHub API access have been moved to:
+// test/automated/PythonEmbedded.Net.IntegrationTest/Manager/InstanceInformationIntegrationTests.cs
+
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using Octokit;
@@ -7,10 +10,9 @@ using PythonEmbedded.Net.Test.TestUtilities;
 namespace PythonEmbedded.Net.Test.Manager;
 
 /// <summary>
-/// Integration tests for instance information and management functionality.
+/// Unit tests for instance information that don't require GitHub API.
 /// </summary>
 [TestFixture]
-[Category("Integration")]
 public class InstanceInformationTests
 {
     private string _testDirectory = null!;
@@ -31,148 +33,51 @@ public class InstanceInformationTests
     }
 
     [Test]
-    [Category("Integration")]
-    public async Task GetInstanceInfo_WithExistingInstance_ReturnsMetadata()
+    public void GetInstanceInfo_WithNonExistentInstance_ReturnsNull()
     {
-        // Arrange - create an instance
-        var runtime = await _manager.GetOrCreateInstanceAsync("3.12", cancellationToken: default);
-        
-        // Act
-        var info = _manager.GetInstanceInfo("3.12");
-        
-        // Assert
-        Assert.That(info, Is.Not.Null);
-        Assert.That(info!.PythonVersion, Is.EqualTo("3.12.0"));
-        Assert.That(info.Directory, Is.Not.Null.And.Not.Empty);
-        Assert.That(Directory.Exists(info.Directory), Is.True);
-    }
-
-    [Test]
-    [Category("Integration")]
-    public async Task GetInstanceInfo_WithNonExistentInstance_ReturnsNull()
-    {
+        // This test doesn't require GitHub API - it just checks for non-existent instance
         var info = _manager.GetInstanceInfo("99.99.99");
         
         Assert.That(info, Is.Null);
     }
 
     [Test]
-    [Category("Integration")]
-    public async Task GetInstanceSize_WithExistingInstance_ReturnsSize()
+    public void GetInstanceSize_WithNonExistentInstance_ReturnsZero()
     {
-        // Arrange - create an instance
-        var runtime = await _manager.GetOrCreateInstanceAsync("3.12", cancellationToken: default);
-        
-        // Act
-        var size = _manager.GetInstanceSize("3.12");
-        
-        // Assert
-        Assert.That(size, Is.GreaterThan(0));
-    }
-
-    [Test]
-    [Category("Integration")]
-    public async Task GetInstanceSize_WithNonExistentInstance_ReturnsZero()
-    {
+        // This test doesn't require GitHub API - it just checks for non-existent instance
         var size = _manager.GetInstanceSize("99.99.99");
         
         Assert.That(size, Is.EqualTo(0));
     }
 
     [Test]
-    [Category("Integration")]
-    public async Task GetTotalDiskUsage_ReturnsTotalSize()
-    {
-        // Arrange - create an instance
-        var runtime = await _manager.GetOrCreateInstanceAsync("3.12", cancellationToken: default);
-        
-        // Act
-        var totalSize = _manager.GetTotalDiskUsage();
-        
-        // Assert
-        Assert.That(totalSize, Is.GreaterThan(0));
-        // Should be at least as large as the single instance
-        var instanceSize = _manager.GetInstanceSize("3.12");
-        Assert.That(totalSize, Is.GreaterThanOrEqualTo(instanceSize));
-    }
-
-    [Test]
-    [Category("Integration")]
-    public async Task ValidateInstanceIntegrity_WithValidInstance_ReturnsTrue()
-    {
-        // Arrange - create an instance
-        var runtime = await _manager.GetOrCreateInstanceAsync("3.12", cancellationToken: default);
-        
-        // Act
-        var isValid = _manager.ValidateInstanceIntegrity("3.12");
-        
-        // Assert
-        Assert.That(isValid, Is.True);
-    }
-
-    [Test]
-    [Category("Integration")]
     public void ValidateInstanceIntegrity_WithNonExistentInstance_ReturnsFalse()
     {
+        // This test doesn't require GitHub API - it just checks for non-existent instance
         var isValid = _manager.ValidateInstanceIntegrity("99.99.99");
         
         Assert.That(isValid, Is.False);
     }
 
     [Test]
-    [Category("Integration")]
-    public async Task GetLatestPythonVersion_ReturnsVersion()
+    public void GetSystemRequirements_ReturnsRequirements()
     {
-        var latestVersion = await _manager.GetLatestPythonVersionAsync();
+        // This test doesn't require GitHub API - it just checks system info
+        var requirements = _manager.GetSystemRequirements();
         
-        Assert.That(latestVersion, Is.Not.Null.And.Not.Empty);
+        Assert.That(requirements, Is.Not.Null);
+        Assert.That(requirements.ContainsKey("Platform"), Is.True);
+        Assert.That(requirements.ContainsKey("Architecture"), Is.True);
+        Assert.That(requirements.ContainsKey("TargetTriple"), Is.True);
     }
 
     [Test]
-    [Category("Integration")]
-    public async Task FindBestMatchingVersion_WithExactMatch_ReturnsVersion()
+    public void CheckDiskSpace_ReturnsCorrectResult()
     {
-        var version = await _manager.FindBestMatchingVersionAsync("3.12");
+        // This test doesn't require GitHub API - it just checks disk space
+        var hasSpace = _manager.CheckDiskSpace(1024L * 1024 * 1024); // 1 GB
         
-        Assert.That(version, Is.Not.Null);
-        Assert.That(version, Does.StartWith("3.12"));
-    }
-
-    [Test]
-    [Category("Integration")]
-    public async Task FindBestMatchingVersion_WithNonExistentVersion_ReturnsNull()
-    {
-        var version = await _manager.FindBestMatchingVersionAsync("99.99");
-        
-        // May return null if no matching version found
-        // This is acceptable behavior
-    }
-
-    [Test]
-    [Category("Integration")]
-    public async Task EnsurePythonVersion_WithNewVersion_DownloadsAndReturnsRuntime()
-    {
-        var runtime = await _manager.EnsurePythonVersionAsync("3.12");
-        
-        Assert.That(runtime, Is.Not.Null);
-        var info = _manager.GetInstanceInfo("3.12");
-        Assert.That(info, Is.Not.Null);
-    }
-
-    [Test]
-    [Category("Integration")]
-    public async Task EnsurePythonVersion_WithExistingVersion_ReturnsRuntime()
-    {
-        // Create instance first
-        var runtime1 = await _manager.GetOrCreateInstanceAsync("3.12");
-        
-        // Ensure it again
-        var runtime2 = await _manager.EnsurePythonVersionAsync("3.12");
-        
-        Assert.That(runtime2, Is.Not.Null);
-        // Should reuse existing instance
-        var instances = _manager.ListInstances();
-        Assert.That(instances.Count(i => i.PythonVersion.StartsWith("3.12")), Is.EqualTo(1));
+        Assert.That(hasSpace, Is.True); // Should have at least 1GB free
     }
 }
 

@@ -13,7 +13,7 @@ public class InstanceNotFoundException : PythonInstallationException
     /// <summary>
     /// Gets or sets the build date that was requested.
     /// </summary>
-    public string? BuildDate { get; set; }
+    public DateTime? BuildDate { get; set; }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="InstanceNotFoundException"/> class.
@@ -39,5 +39,6 @@ public class InstanceNotFoundException : PythonInstallationException
     {
     }
 }
+
 
 

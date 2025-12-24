@@ -15,14 +15,15 @@ public static class MockPythonInstanceHelper
     /// </summary>
     /// <param name="baseDirectory">The base directory where the instance should be created.</param>
     /// <param name="pythonVersion">The Python version (e.g., "3.12.0").</param>
-    /// <param name="buildDate">The build date (e.g., "20240115").</param>
+    /// <param name="buildDate">The build date.</param>
     /// <returns>The instance metadata.</returns>
     public static InstanceMetadata CreateMockPythonInstance(
         string baseDirectory,
         string pythonVersion = "3.12.0",
-        string buildDate = "20240115")
+        DateTime? buildDate = null)
     {
-        string instanceDirectory = Path.Combine(baseDirectory, $"python-{pythonVersion}-{buildDate}");
+        var actualBuildDate = buildDate ?? new DateTime(2024, 1, 15);
+        string instanceDirectory = Path.Combine(baseDirectory, $"python-{pythonVersion}-{actualBuildDate:yyyyMMdd}");
         Directory.CreateDirectory(instanceDirectory);
 
         // Create Python executable path structure
@@ -45,7 +46,7 @@ public static class MockPythonInstanceHelper
         var metadata = new InstanceMetadata
         {
             PythonVersion = pythonVersion,
-            BuildDate = buildDate,
+            BuildDate = actualBuildDate,
             WasLatestBuild = false,
             InstallationDate = DateTime.Now,
             Directory = instanceDirectory

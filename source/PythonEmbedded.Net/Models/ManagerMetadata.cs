@@ -44,9 +44,9 @@ public class ManagerMetadata
     /// An <see cref="InstanceMetadata"/> object representing the matching Python runtime instance, or
     /// <c>null</c> if no instance matches the criteria.
     /// </returns>
-    public InstanceMetadata? FindInstance(string pythonVersion, string? buildDate = null)
+    public InstanceMetadata? FindInstance(string pythonVersion, DateTime? buildDate = null)
     {
-        return this.Instances.FirstOrDefault(i => i.PythonVersion == pythonVersion && ((buildDate == null && i.WasLatestBuild) || i.BuildDate == buildDate));
+        return this.Instances.FirstOrDefault(i => i.PythonVersion == pythonVersion && ((buildDate == null && i.WasLatestBuild) || (buildDate.HasValue && i.BuildDate.Date == buildDate.Value.Date)));
     }
 
     /// <summary>
@@ -82,7 +82,7 @@ public class ManagerMetadata
     /// <param name="pythonVersion">The Python version of the instance to be removed.</param>
     /// <param name="buildDate">The optional build date of the instance. If null, the latest build instance is considered.</param>
     /// <returns>Returns true if the instance was found and removed successfully; otherwise, false.</returns>
-    public bool RemoveInstance(string pythonVersion, string? buildDate = null)
+    public bool RemoveInstance(string pythonVersion, DateTime? buildDate = null)
     {
         InstanceMetadata? instance = FindInstance(pythonVersion, buildDate);
         if (instance is not null)

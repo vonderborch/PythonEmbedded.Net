@@ -546,7 +546,7 @@ var instances = manager.ListInstances();
 foreach (var instance in instances)
 {
     Console.WriteLine($"Version: {instance.PythonVersion}");
-    Console.WriteLine($"Build Date: {instance.BuildDate}");
+    Console.WriteLine($"Build Date: {instance.BuildDate:yyyy-MM-dd}");
     Console.WriteLine($"Directory: {instance.Directory}");
     Console.WriteLine($"Installed: {instance.InstallationDate}");
 }

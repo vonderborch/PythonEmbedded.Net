@@ -17,7 +17,7 @@ public class InstanceMetadata
     /// <summary>
     /// Gets or sets the date indicating when the build was created.
     /// </summary>
-    public string BuildDate { get; set; } = string.Empty;
+    public DateTime BuildDate { get; set; } = DateTime.MinValue;
 
     /// <summary>
     /// Gets or sets a value indicating whether the current build was the most recent successful build.

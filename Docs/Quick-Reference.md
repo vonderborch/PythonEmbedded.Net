@@ -249,10 +249,10 @@ var result = await runtime.ExecuteCommandAsync(
 ### IPythonManager
 
 ```csharp
-Task<IPythonRuntime> GetOrCreateInstanceAsync(string pythonVersion, string? buildDate = null, CancellationToken cancellationToken = default)
-IPythonRuntime GetOrCreateInstance(string pythonVersion, string? buildDate = null)
-Task<bool> DeleteInstanceAsync(string pythonVersion, string? buildDate = null, CancellationToken cancellationToken = default)
-bool DeleteInstance(string pythonVersion, string? buildDate = null)
+Task<IPythonRuntime> GetOrCreateInstanceAsync(string pythonVersion, DateTime? buildDate = null, CancellationToken cancellationToken = default)
+IPythonRuntime GetOrCreateInstance(string pythonVersion, DateTime? buildDate = null)
+Task<bool> DeleteInstanceAsync(string pythonVersion, DateTime? buildDate = null, CancellationToken cancellationToken = default)
+bool DeleteInstance(string pythonVersion, DateTime? buildDate = null)
 IReadOnlyList<InstanceMetadata> ListInstances()
 Task<IReadOnlyList<string>> ListAvailableVersionsAsync(string? releaseTag = null, CancellationToken cancellationToken = default)
 IReadOnlyList<string> ListAvailableVersions(string? releaseTag = null)
@@ -304,8 +304,8 @@ public record PythonExecutionResult(
 ## Version Format
 
 - Full version: `"3.12.0"`
-- Minor version: `"3.12"`
-- With build date: `GetOrCreateInstanceAsync("3.12.0", buildDate: "20240115")`
+- Minor version: `"3.12"` (finds latest patch version, e.g., "3.12.19")
+- With build date: `GetOrCreateInstanceAsync("3.12.0", buildDate: new DateTime(2024, 1, 15))`
 
 ## See Also
 

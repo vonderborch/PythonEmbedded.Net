@@ -58,15 +58,15 @@ Initializes a new instance of the BasePythonManager class.
 ```csharp
 public async Task<BasePythonRuntime> GetOrCreateInstanceAsync(
     string? pythonVersion = null,
-    string? buildDate = null,
+    DateTime? buildDate = null,
     CancellationToken cancellationToken = default)
 ```
 
 Gets or creates a Python runtime instance for the specified version. Downloads and installs the Python distribution if it doesn't exist.
 
 **Parameters:**
-- `pythonVersion` - Optional Python version (e.g., "3.12", "3.11.5"). If null, uses default from configuration or "3.12"
-- `buildDate` - Optional build date (YYYYMMDD format). If null, uses the latest build
+- `pythonVersion` - Optional Python version (e.g., "3.12", "3.11.5"). If null, uses default from configuration or "3.12". Supports partial versions (e.g., "3.10" will find the latest patch version like "3.10.19")
+- `buildDate` - Optional build date. If null, uses the latest build. If specified, finds the first release on or after this date
 - `cancellationToken` - Cancellation token
 
 **Returns:**
@@ -82,7 +82,7 @@ Gets or creates a Python runtime instance for the specified version. Downloads a
 ```csharp
 public async Task<BasePythonRuntime?> GetInstanceAsync(
     string pythonVersion,
-    string? buildDate = null,
+    DateTime? buildDate = null,
     CancellationToken cancellationToken = default)
 ```
 
@@ -90,7 +90,7 @@ Gets an existing Python runtime instance without creating a new one.
 
 **Parameters:**
 - `pythonVersion` - Python version (e.g., "3.12")
-- `buildDate` - Optional build date (YYYYMMDD format)
+- `buildDate` - Optional build date
 - `cancellationToken` - Cancellation token
 
 **Returns:**
@@ -99,7 +99,7 @@ Gets an existing Python runtime instance without creating a new one.
 ### DeleteInstance
 
 ```csharp
-public bool DeleteInstance(string pythonVersion, string? buildDate = null)
+public bool DeleteInstance(string pythonVersion, DateTime? buildDate = null)
 ```
 
 Deletes a Python instance from disk.
@@ -178,7 +178,7 @@ Finds the best matching Python version for a version specification (e.g., ">=3.1
 ### ValidateInstanceIntegrity
 
 ```csharp
-public bool ValidateInstanceIntegrity(string pythonVersion, string? buildDate = null)
+public bool ValidateInstanceIntegrity(string pythonVersion, DateTime? buildDate = null)
 ```
 
 Validates that a Python instance is complete and not corrupted.

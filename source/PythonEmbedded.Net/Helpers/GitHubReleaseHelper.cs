@@ -8,7 +8,6 @@ namespace PythonEmbedded.Net.Helpers;
 /// Helper class for interacting with GitHub Releases API to find and download Python distributions.
 /// Downloads are sourced from python-build-standalone (https://github.com/astral-sh/python-build-standalone).
 /// We are not associated with astral-sh, but thank them for their fantastic work.
-/// This helper tries Octokit first, then falls back to direct HTTP calls if Octokit fails.
 /// </summary>
 internal static class GitHubReleaseHelper
 {
@@ -17,12 +16,11 @@ internal static class GitHubReleaseHelper
 
     /// <summary>
     /// Finds a release asset for the specified Python version, build date, and platform.
-    /// Tries Octokit first, falls back to HTTP if Octokit fails.
     /// </summary>
     public static async Task<ReleaseAsset?> FindReleaseAssetAsync(
         GitHubClient client,
         string pythonVersion,
-        string? buildDate,
+        DateTime? buildDate,
         PlatformInfo platform,
         CancellationToken cancellationToken = default)
     {
@@ -33,251 +31,170 @@ internal static class GitHubReleaseHelper
         if (string.IsNullOrWhiteSpace(platform.TargetTriple))
             throw new ArgumentException("Platform target triple is required.", nameof(platform));
 
-        // Try Octokit first
-        try
-        {
-            return await FindReleaseAssetWithOctokitAsync(client, pythonVersion, buildDate, platform, cancellationToken).ConfigureAwait(false);
-        }
-        catch (NotFoundException)
-        {
-            // NotFoundException is expected in some cases, rethrow it
-            throw new InstanceNotFoundException(
-                $"Release not found for Python {pythonVersion} and build date {buildDate ?? "latest"}")
-            {
-                PythonVersion = pythonVersion,
-                BuildDate = buildDate
-            };
-        }
-        catch (RateLimitExceededException ex)
-        {
-            // Rate limit exceeded - HTTP fallback will have the same issue, so rethrow
-            throw new PythonInstallationException(
-                $"GitHub API rate limit exceeded. Please wait until {ex.Reset} or provide an authenticated GitHub client.",
-                ex);
-        }
-        catch (ApiException ex)
-        {
-            // For API exceptions, only fall back if it's not a rate limit or authentication issue
-            // HTTP fallback will have the same API issues, so only use it for Octokit-specific problems
-            // Check if it's a rate limit or auth issue (4xx errors)
-            if (ex.StatusCode >= System.Net.HttpStatusCode.BadRequest && 
-                ex.StatusCode < System.Net.HttpStatusCode.InternalServerError)
-            {
-                // 4xx errors (rate limit, auth, etc.) - HTTP will have same issue, so rethrow
-                throw new PythonInstallationException(
-                    $"GitHub API error: {ex.Message}",
-                    ex);
-            }
-            
-            // For 5xx errors or other issues, try HTTP fallback
-            return await FindReleaseAssetWithHttpFallbackAsync(pythonVersion, buildDate, platform, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (IsOctokitRelatedException(ex))
-        {
-            // Octokit-related exceptions (library issues) - try HTTP fallback
-            return await FindReleaseAssetWithHttpFallbackAsync(pythonVersion, buildDate, platform, cancellationToken).ConfigureAwait(false);
-        }
+        return await FindReleaseAssetWithOctokitAsync(client, pythonVersion, buildDate, platform, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<ReleaseAsset?> FindReleaseAssetWithOctokitAsync(
         GitHubClient client,
         string pythonVersion,
-        string? buildDate,
+        DateTime? buildDate,
         PlatformInfo platform,
         CancellationToken cancellationToken)
     {
-        // Get all releases
-        var releases = await client.Repository.Release.GetAll(RepositoryOwner, RepositoryName).ConfigureAwait(false);
+        // Check if this is a partial version (e.g., "3.10" without patch)
+        // A partial version is one that doesn't have 3 parts (major.minor.patch)
+        var versionParts = pythonVersion.Split('.');
+        var isPartialVersion = versionParts.Length < 3;
         
-        // Filter releases by build date if specified
-        var matchingReleases = releases.Where(r => IsMatchingRelease(r, pythonVersion, buildDate)).ToList();
+        // Parse version to get major and minor
+        var (major, minor, patch) = VersionParser.ParseVersion(pythonVersion);
 
-        if (!matchingReleases.Any())
+        // Find the appropriate release
+        // Use HTTP for date-based searches (more efficient, avoids fetching all releases with Octokit)
+        // Use Octokit for latest release (more efficient)
+        Release? release = null;
+        
+        if (buildDate.HasValue)
+        {
+            // Use HTTP for date-based filtering - more efficient than Octokit pagination
+            var httpRelease = await GitHubHttpHelper.FindReleaseOnOrAfterDateAsync(
+                buildDate.Value, 
+                maxPages: 10, 
+                cancellationToken).ConfigureAwait(false);
+            
+            if (httpRelease == null)
+            {
+                throw new InstanceNotFoundException(
+                    $"No matching release found for Python {pythonVersion} and build date {buildDate.Value:yyyy-MM-dd}")
+                {
+                    PythonVersion = pythonVersion,
+                    BuildDate = buildDate
+                };
+            }
+            
+            // Convert HTTP release to Octokit release by fetching it
+            try
+            {
+                release = await client.Repository.Release.Get(RepositoryOwner, RepositoryName, httpRelease.TagName).ConfigureAwait(false);
+            }
+            catch (NotFoundException)
+            {
+                throw new InstanceNotFoundException(
+                    $"Release found via HTTP but not accessible via Octokit: {httpRelease.TagName}")
+                {
+                    PythonVersion = pythonVersion,
+                    BuildDate = buildDate
+                };
+            }
+        }
+        else
+        {
+            // Get latest release using Octokit (efficient)
+            release = await client.Repository.Release.GetLatest(RepositoryOwner, RepositoryName).ConfigureAwait(false);
+        }
+
+        if (release is null)
         {
             throw new InstanceNotFoundException(
-                $"No matching release found for Python {pythonVersion} and build date {buildDate ?? "latest"}")
+                $"No matching release found for Python {pythonVersion} and build date {buildDate?.ToString("yyyy-MM-dd") ?? "latest"}")
             {
                 PythonVersion = pythonVersion,
                 BuildDate = buildDate
             };
         }
 
-        // Prefer install-only archives, fallback to full archives
+        // Collect all matching assets from this release
         var preferredAssets = new List<ReleaseAsset>();
         var fallbackAssets = new List<ReleaseAsset>();
 
-        foreach (var release in matchingReleases.OrderByDescending(r => r.PublishedAt))
+        foreach (var asset in release.Assets)
         {
-            var assets = release.Assets;
-            foreach (var asset in assets)
+            // If we have a partial version (e.g., "3.10"), match any patch version (e.g., "3.10.19")
+            // Otherwise, match exact version
+            if (IsMatchingAsset(asset, pythonVersion, platform.TargetTriple, isPartialVersion, major, minor))
             {
-                if (IsMatchingAsset(asset, pythonVersion, platform.TargetTriple))
+                if (IsInstallOnlyArchive(asset.Name))
                 {
-                    if (IsInstallOnlyArchive(asset.Name))
-                    {
-                        preferredAssets.Add(asset);
-                    }
-                    else if (IsFullArchive(asset.Name))
-                    {
-                        fallbackAssets.Add(asset);
-                    }
+                    preferredAssets.Add(asset);
+                }
+                else if (IsFullArchive(asset.Name))
+                {
+                    fallbackAssets.Add(asset);
                 }
             }
+        }
 
-            if (preferredAssets.Any())
+        // If we have a partial version and no matches in this release, we may need to search other releases
+        // But for now, we'll just use the latest release. If needed, we can enhance this later.
+        if (preferredAssets.Any())
+        {
+            // For partial versions, prefer the latest patch version
+            if (isPartialVersion)
             {
-                return preferredAssets.OrderByDescending(a => a.UpdatedAt).First();
+                return preferredAssets
+                    .OrderByDescending(a => 
+                    {
+                        var versionStr = ExtractVersionFromAssetName(a.Name);
+                        return VersionParser.ParseVersion(versionStr);
+                    }, Comparer<(int Major, int Minor, int Patch)>.Create((v1, v2) => 
+                    {
+                        var majorCmp = v1.Major.CompareTo(v2.Major);
+                        if (majorCmp != 0) return majorCmp;
+                        var minorCmp = v1.Minor.CompareTo(v2.Minor);
+                        if (minorCmp != 0) return minorCmp;
+                        return v1.Patch.CompareTo(v2.Patch);
+                    }))
+                    .ThenByDescending(a => a.UpdatedAt)
+                    .First();
             }
+            return preferredAssets.OrderByDescending(a => a.UpdatedAt).First();
         }
 
         if (fallbackAssets.Any())
         {
+            // For partial versions, prefer the latest patch version
+            if (isPartialVersion)
+            {
+                return fallbackAssets
+                    .OrderByDescending(a => 
+                    {
+                        var versionStr = ExtractVersionFromAssetName(a.Name);
+                        return VersionParser.ParseVersion(versionStr);
+                    }, Comparer<(int Major, int Minor, int Patch)>.Create((v1, v2) => 
+                    {
+                        var majorCmp = v1.Major.CompareTo(v2.Major);
+                        if (majorCmp != 0) return majorCmp;
+                        var minorCmp = v1.Minor.CompareTo(v2.Minor);
+                        if (minorCmp != 0) return minorCmp;
+                        return v1.Patch.CompareTo(v2.Patch);
+                    }))
+                    .ThenByDescending(a => a.UpdatedAt)
+                    .First();
+            }
             return fallbackAssets.OrderByDescending(a => a.UpdatedAt).First();
         }
 
         throw new InstanceNotFoundException(
-            $"No matching asset found for Python {pythonVersion}, build date {buildDate ?? "latest"}, and platform {platform.TargetTriple}")
+            $"No matching asset found for Python {pythonVersion}, build date {buildDate?.ToString("yyyy-MM-dd") ?? "latest"}, and platform {platform.TargetTriple}")
         {
             PythonVersion = pythonVersion,
             BuildDate = buildDate
         };
     }
 
-    private static async Task<ReleaseAsset?> FindReleaseAssetWithHttpFallbackAsync(
-        string pythonVersion,
-        string? buildDate,
-        PlatformInfo platform,
-        CancellationToken cancellationToken)
+
+    /// <summary>
+    /// Extracts version string from asset name for comparison.
+    /// </summary>
+    private static string ExtractVersionFromAssetName(string assetName)
     {
-        try
-        {
-            // Get all releases using HTTP
-            var releases = await GitHubHttpFallbackHelper.GetAllReleasesAsync(null, cancellationToken).ConfigureAwait(false);
-            
-            // Filter releases by build date if specified
-            var matchingReleases = releases.Where(r => IsMatchingReleaseDto(r, pythonVersion, buildDate)).ToList();
-
-            if (!matchingReleases.Any())
-            {
-                throw new InstanceNotFoundException(
-                    $"No matching release found for Python {pythonVersion} and build date {buildDate ?? "latest"}")
-                {
-                    PythonVersion = pythonVersion,
-                    BuildDate = buildDate
-                };
-            }
-
-            // Prefer install-only archives, fallback to full archives
-            var preferredAssets = new List<GitHubReleaseAssetDto>();
-            var fallbackAssets = new List<GitHubReleaseAssetDto>();
-
-            foreach (var release in matchingReleases.OrderByDescending(r => r.PublishedAt ?? DateTimeOffset.MinValue))
-            {
-                foreach (var asset in release.Assets)
-                {
-                    if (IsMatchingAssetDto(asset, pythonVersion, platform.TargetTriple))
-                    {
-                        if (IsInstallOnlyArchive(asset.Name))
-                        {
-                            preferredAssets.Add(asset);
-                        }
-                        else if (IsFullArchive(asset.Name))
-                        {
-                            fallbackAssets.Add(asset);
-                        }
-                    }
-                }
-
-                if (preferredAssets.Any())
-                {
-                    var selectedAsset = preferredAssets.OrderByDescending(a => a.UpdatedAt ?? DateTimeOffset.MinValue).First();
-                    return ConvertDtoToOctokitAsset(selectedAsset);
-                }
-            }
-
-            if (fallbackAssets.Any())
-            {
-                var selectedAsset = fallbackAssets.OrderByDescending(a => a.UpdatedAt ?? DateTimeOffset.MinValue).First();
-                return ConvertDtoToOctokitAsset(selectedAsset);
-            }
-
-            throw new InstanceNotFoundException(
-                $"No matching asset found for Python {pythonVersion}, build date {buildDate ?? "latest"}, and platform {platform.TargetTriple}")
-            {
-                PythonVersion = pythonVersion,
-                BuildDate = buildDate
-            };
-        }
-        catch (InstanceNotFoundException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            throw new PythonInstallationException(
-                $"HTTP fallback failed to find release asset: {ex.Message}",
-                ex);
-        }
+        var match = System.Text.RegularExpressions.Regex.Match(
+            assetName.ToLowerInvariant(),
+            @"(?:cpython|python)-(\d+\.\d+\.\d+)");
+        
+        return match.Success ? match.Groups[1].Value : "0.0.0";
     }
 
-    private static bool IsOctokitRelatedException(Exception ex)
-    {
-        // Check if the exception is related to Octokit (e.g., missing assembly, initialization issues)
-        var typeName = ex.GetType().FullName ?? string.Empty;
-        return typeName.Contains("Octokit", StringComparison.OrdinalIgnoreCase) ||
-               ex is TypeLoadException ||
-               ex is MissingMethodException ||
-               ex is DllNotFoundException;
-    }
-
-    private static ReleaseAsset ConvertDtoToOctokitAsset(GitHubReleaseAssetDto dto)
-    {
-        // Create a ReleaseAsset using reflection since properties are read-only
-        // We'll use reflection to set the properties after construction
-        var asset = new ReleaseAsset();
-        
-        // Use reflection to set read-only properties
-        var type = typeof(ReleaseAsset);
-        var idProp = type.GetProperty("Id");
-        var nameProp = type.GetProperty("Name");
-        var urlProp = type.GetProperty("BrowserDownloadUrl");
-        var updatedProp = type.GetProperty("UpdatedAt");
-        
-        if (idProp != null && idProp.CanWrite)
-            idProp.SetValue(asset, dto.Id);
-        else if (idProp != null)
-        {
-            // Try to set via reflection with non-public setter
-            var setter = idProp.GetSetMethod(nonPublic: true);
-            setter?.Invoke(asset, new object[] { dto.Id });
-        }
-        
-        if (nameProp != null && nameProp.CanWrite)
-            nameProp.SetValue(asset, dto.Name);
-        else if (nameProp != null)
-        {
-            var setter = nameProp.GetSetMethod(nonPublic: true);
-            setter?.Invoke(asset, new object[] { dto.Name });
-        }
-        
-        if (urlProp != null && urlProp.CanWrite)
-            urlProp.SetValue(asset, dto.BrowserDownloadUrl);
-        else if (urlProp != null)
-        {
-            var setter = urlProp.GetSetMethod(nonPublic: true);
-            setter?.Invoke(asset, new object[] { dto.BrowserDownloadUrl });
-        }
-        
-        if (updatedProp != null && updatedProp.CanWrite)
-            updatedProp.SetValue(asset, dto.UpdatedAt ?? DateTimeOffset.UtcNow);
-        else if (updatedProp != null)
-        {
-            var setter = updatedProp.GetSetMethod(nonPublic: true);
-            setter?.Invoke(asset, new object[] { dto.UpdatedAt ?? DateTimeOffset.UtcNow });
-        }
-        
-        return asset;
-    }
 
     /// <summary>
     /// Downloads a release asset to a specified path.
@@ -341,80 +258,38 @@ internal static class GitHubReleaseHelper
         }
     }
 
-    private static bool IsMatchingRelease(Release release, string pythonVersion, string? buildDate)
-    {
-        // Releases are typically tagged with build dates (e.g., YYYYMMDD format)
-        // or contain Python version in the tag/name
-        var tag = release.TagName.ToLowerInvariant();
-        var name = release.Name?.ToLowerInvariant() ?? string.Empty;
-        
-        // Check if Python version is in the tag or name
-        var versionInRelease = tag.Contains(pythonVersion.Replace(".", "")) || 
-                               name.Contains(pythonVersion);
-
-        if (!versionInRelease)
-            return false;
-
-        // If build date is specified, try to match it
-        if (!string.IsNullOrWhiteSpace(buildDate))
-        {
-            // Build date format can be YYYY-MM-DD or YYYYMMDD
-            var normalizedBuildDate = buildDate.Replace("-", "");
-            return tag.Contains(normalizedBuildDate) || name.Contains(normalizedBuildDate);
-        }
-
-        return true;
-    }
-
-    private static bool IsMatchingReleaseDto(GitHubReleaseDto release, string pythonVersion, string? buildDate)
-    {
-        // Releases are typically tagged with build dates (e.g., YYYYMMDD format)
-        // or contain Python version in the tag/name
-        var tag = release.TagName.ToLowerInvariant();
-        var name = release.Name?.ToLowerInvariant() ?? string.Empty;
-        
-        // Check if Python version is in the tag or name
-        var versionInRelease = tag.Contains(pythonVersion.Replace(".", "")) || 
-                               name.Contains(pythonVersion);
-
-        if (!versionInRelease)
-            return false;
-
-        // If build date is specified, try to match it
-        if (!string.IsNullOrWhiteSpace(buildDate))
-        {
-            // Build date format can be YYYY-MM-DD or YYYYMMDD
-            var normalizedBuildDate = buildDate.Replace("-", "");
-            return tag.Contains(normalizedBuildDate) || name.Contains(normalizedBuildDate);
-        }
-
-        return true;
-    }
-
-    private static bool IsMatchingAsset(ReleaseAsset asset, string pythonVersion, string targetTriple)
+    private static bool IsMatchingAsset(ReleaseAsset asset, string pythonVersion, string targetTriple, bool isPartialVersion, int major, int minor)
     {
         var name = asset.Name.ToLowerInvariant();
         
-        // Check if it contains the Python version (e.g., cpython-3.12.0)
-        var versionInName = name.Contains($"cpython-{pythonVersion}") || 
-                           name.Contains($"python-{pythonVersion}");
-
-        if (!versionInName)
+        // Extract version from asset name
+        var versionMatch = System.Text.RegularExpressions.Regex.Match(
+            name,
+            @"(?:cpython|python)-(\d+)\.(\d+)\.(\d+)");
+        
+        if (!versionMatch.Success)
             return false;
 
-        // Check if it contains the target triple
-        return name.Contains(targetTriple.ToLowerInvariant());
-    }
+        var assetMajor = int.Parse(versionMatch.Groups[1].Value);
+        var assetMinor = int.Parse(versionMatch.Groups[2].Value);
+        var assetPatch = int.Parse(versionMatch.Groups[3].Value);
 
-    private static bool IsMatchingAssetDto(GitHubReleaseAssetDto asset, string pythonVersion, string targetTriple)
-    {
-        var name = asset.Name.ToLowerInvariant();
-        
-        // Check if it contains the Python version (e.g., cpython-3.12.0)
-        var versionInName = name.Contains($"cpython-{pythonVersion}") || 
-                           name.Contains($"python-{pythonVersion}");
+        // For partial versions (e.g., "3.10"), match any patch version (e.g., "3.10.19")
+        // For full versions, match exactly
+        bool versionMatches;
+        if (isPartialVersion)
+        {
+            versionMatches = assetMajor == major && assetMinor == minor;
+        }
+        else
+        {
+            var (requestedMajor, requestedMinor, requestedPatch) = VersionParser.ParseVersion(pythonVersion);
+            versionMatches = assetMajor == requestedMajor && 
+                            assetMinor == requestedMinor && 
+                            assetPatch == requestedPatch;
+        }
 
-        if (!versionInName)
+        if (!versionMatches)
             return false;
 
         // Check if it contains the target triple
@@ -439,7 +314,6 @@ internal static class GitHubReleaseHelper
 
     /// <summary>
     /// Lists all available Python versions from GitHub releases.
-    /// Tries Octokit first, falls back to HTTP if Octokit fails.
     /// </summary>
     /// <param name="client">The GitHub client.</param>
     /// <param name="releaseTag">Optional release tag to query. If null, queries the latest release.</param>
@@ -463,32 +337,17 @@ internal static class GitHubReleaseHelper
         }
         catch (RateLimitExceededException ex)
         {
-            // Rate limit exceeded - HTTP fallback will have the same issue, so rethrow
+            // Rate limit exceeded
             throw new PythonInstallationException(
                 $"GitHub API rate limit exceeded. Please wait until {ex.Reset} or provide an authenticated GitHub client.",
                 ex);
         }
         catch (ApiException ex)
         {
-            // For API exceptions, only fall back if it's not a rate limit or authentication issue
-            // HTTP fallback will have the same API issues, so only use it for Octokit-specific problems
-            // Check if it's a rate limit or auth issue (4xx errors)
-            if (ex.StatusCode >= System.Net.HttpStatusCode.BadRequest && 
-                ex.StatusCode < System.Net.HttpStatusCode.InternalServerError)
-            {
-                // 4xx errors (rate limit, auth, etc.) - HTTP will have same issue, so rethrow
-                throw new PythonInstallationException(
-                    $"GitHub API error: {ex.Message}",
-                    ex);
-            }
-            
-            // For 5xx errors or other issues, try HTTP fallback
-            return await ListAvailableVersionsWithHttpFallbackAsync(releaseTag, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (IsOctokitRelatedException(ex))
-        {
-            // Octokit-related exceptions (library issues) - try HTTP fallback
-            return await ListAvailableVersionsWithHttpFallbackAsync(releaseTag, cancellationToken).ConfigureAwait(false);
+            // API exceptions
+            throw new PythonInstallationException(
+                $"GitHub API error: {ex.Message}",
+                ex);
         }
     }
 
@@ -517,42 +376,6 @@ internal static class GitHubReleaseHelper
             .ToList().AsReadOnly();
     }
 
-    private static async Task<IReadOnlyList<string>> ListAvailableVersionsWithHttpFallbackAsync(
-        string? releaseTag,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            GitHubReleaseDto release;
-            
-            if (!string.IsNullOrWhiteSpace(releaseTag))
-            {
-                // Get specific release
-                release = await GitHubHttpFallbackHelper.GetReleaseByTagAsync(releaseTag, null, cancellationToken).ConfigureAwait(false);
-            }
-            else
-            {
-                // Get latest release
-                release = await GitHubHttpFallbackHelper.GetLatestReleaseAsync(null, cancellationToken).ConfigureAwait(false);
-            }
-
-            var versions = ExtractVersionsFromReleaseDto(release);
-
-            return versions
-                .OrderDescending()
-                .ToList().AsReadOnly();
-        }
-        catch (InstanceNotFoundException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            throw new PythonInstallationException(
-                $"HTTP fallback failed to list available versions: {ex.Message}",
-                ex);
-        }
-    }
 
     private static List<string> ExtractVersionsFromRelease(Release release)
     {
@@ -585,34 +408,4 @@ internal static class GitHubReleaseHelper
         return pythonVersions.ToList();
     }
 
-    private static List<string> ExtractVersionsFromReleaseDto(GitHubReleaseDto release)
-    {
-        // Try to extract Python version and build date from release tag/name
-        // Format examples: "20240115" (build date), "cpython-3.12.0+20240115", etc.
-        var tag = release.TagName;
-        var name = release.Name ?? string.Empty;
-
-        // Try to extract version from assets
-        var pythonVersions = new HashSet<string>();
-
-        foreach (var asset in release.Assets)
-        {
-            var assetName = asset.Name.ToLowerInvariant();
-            
-            // Extract Python version from asset name (e.g., "cpython-3.12.0-...")
-            var versionMatch = System.Text.RegularExpressions.Regex.Match(
-                assetName, 
-                @"(?:cpython|python)-(\d+\.\d+\.\d+)");
-            
-            if (versionMatch.Success)
-            {
-                pythonVersions.Add(versionMatch.Groups[1].Value);
-            }
-        }
-
-        if (!pythonVersions.Any())
-            return new();
-
-        return pythonVersions.ToList();
-    }
 }

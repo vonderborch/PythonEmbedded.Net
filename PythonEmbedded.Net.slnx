@@ -81,6 +81,7 @@
   </Folder>
   <Folder Name="/test/" />
   <Folder Name="/test/automated/">
+    <Project Path="test/automated/PythonEmbedded.Net.IntegrationTest/PythonEmbedded.Net.IntegrationTest.csproj" />
     <Project Path="test\automated\PythonEmbedded.Net.Test\PythonEmbedded.Net.Test.csproj" />
   </Folder>
   <Folder Name="/test/manual/">

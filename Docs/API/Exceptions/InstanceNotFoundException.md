@@ -27,7 +27,7 @@ Gets or sets the Python version that was requested.
 ### BuildDate
 
 ```csharp
-public string? BuildDate { get; set; }
+public DateTime? BuildDate { get; set; }
 ```
 
 Gets or sets the build date that was requested.

@@ -81,7 +81,7 @@ public abstract class BasePythonManager
 
     public async Task<BasePythonRuntime> GetOrCreateInstanceAsync(
         string? pythonVersion = null,
-        string? buildDate = null,
+        DateTime? buildDate = null,
         CancellationToken cancellationToken = default)
     {
         // Use default version from configuration if not specified
@@ -92,7 +92,7 @@ public abstract class BasePythonManager
         }
         
         this._logger?.LogInformation("Getting or creating Python instance: Version={Version}, BuildDate={BuildDate}",
-            pythonVersion, buildDate ?? "latest");
+            pythonVersion, buildDate?.ToString("yyyy-MM-dd") ?? "latest");
         
         // Normalize version
         var normalizedVersion = VersionParser.NormalizeVersion(pythonVersion);
@@ -128,7 +128,7 @@ public abstract class BasePythonManager
             if (asset == null)
             {
                 throw new InstanceNotFoundException(
-                    $"No release asset found for Python {normalizedVersion} and build date {buildDate ?? "latest"}")
+                    $"No release asset found for Python {normalizedVersion} and build date {buildDate?.ToString("yyyy-MM-dd") ?? "latest"}")
                 {
                     PythonVersion = normalizedVersion,
                     BuildDate = buildDate
@@ -136,11 +136,11 @@ public abstract class BasePythonManager
             }
             
             // Extract build date from release if not provided
-            string actualBuildDate = buildDate ?? await ExtractBuildDateFromReleaseAsync(
+            DateTime actualBuildDate = buildDate ?? await ExtractBuildDateFromReleaseAsync(
                 normalizedVersion, asset, cancellationToken).ConfigureAwait(false);
             
             // Create instance directory
-            string instanceDirectoryName = $"python-{normalizedVersion}-{actualBuildDate}";
+            string instanceDirectoryName = $"python-{normalizedVersion}-{actualBuildDate:yyyyMMdd}";
             string instanceDirectory = Path.Combine(this._rootDirectory, instanceDirectoryName);
             
             if (Directory.Exists(instanceDirectory))
@@ -274,111 +274,57 @@ public abstract class BasePythonManager
         return runtime;
     }
     
-    private async Task<string> ExtractBuildDateFromReleaseAsync(
+    private async Task<DateTime> ExtractBuildDateFromReleaseAsync(
         string pythonVersion,
         Octokit.ReleaseAsset asset,
         CancellationToken cancellationToken)
     {
-        // Try Octokit first
-        try
-        {
-            return await ExtractBuildDateWithOctokitAsync(asset, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (IsOctokitRelatedException(ex))
-        {
-            // Octokit failed, try HTTP fallback
-            this._logger?.LogDebug("Octokit failed in ExtractBuildDateFromReleaseAsync, using HTTP fallback: {Error}", ex.Message);
-            return await ExtractBuildDateWithHttpFallbackAsync(asset, cancellationToken).ConfigureAwait(false);
-        }
-    }
-
-    private async Task<string> ExtractBuildDateWithOctokitAsync(
-        Octokit.ReleaseAsset asset,
-        CancellationToken cancellationToken)
-    {
-        // Query releases to find which one contains this asset
-        const string repositoryOwner = "astral-sh";
-        const string repositoryName = "python-build-standalone";
-        var releases = await this._gitHubClient.Repository.Release.GetAll(
-            repositoryOwner,
-            repositoryName).ConfigureAwait(false);
+        // Use HTTP to search releases (more efficient than Octokit pagination for this operation)
+        // Search through releases to find which one contains this asset
+        var releases = await Helpers.GitHubHttpHelper.GetReleasesAsync(maxPages: 10, cancellationToken).ConfigureAwait(false);
         
         // Find the release that contains this asset
         var release = releases.FirstOrDefault(r => 
             r.Assets.Any(a => a.Id == asset.Id || a.Name == asset.Name));
         
-        if (release == null)
+        if (release != null)
         {
-            // Fallback: try to extract from asset name or use a default
-            this._logger?.LogWarning(
-                "Could not find release for asset {AssetName}. Using default build date.",
-                asset.Name);
-            return "unknown";
-        }
-        
-        return ExtractBuildDateFromTag(release.TagName);
-    }
-
-    private async Task<string> ExtractBuildDateWithHttpFallbackAsync(
-        Octokit.ReleaseAsset asset,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            // Get all releases using HTTP
-            var releases = await Helpers.GitHubHttpFallbackHelper.GetAllReleasesAsync(null, cancellationToken).ConfigureAwait(false);
-            
-            // Find the release that contains this asset
-            var release = releases.FirstOrDefault(r => 
-                r.Assets.Any(a => a.Id == asset.Id || a.Name == asset.Name));
-            
-            if (release == null)
-            {
-                // Fallback: try to extract from asset name or use a default
-                this._logger?.LogWarning(
-                    "Could not find release for asset {AssetName} using HTTP fallback. Using default build date.",
-                    asset.Name);
-                return "unknown";
-            }
-            
             return ExtractBuildDateFromTag(release.TagName);
         }
-        catch (Exception ex)
-        {
-            this._logger?.LogWarning(
-                "HTTP fallback failed to extract build date for asset {AssetName}: {Error}. Using default build date.",
-                asset.Name, ex.Message);
-            return "unknown";
-        }
+        
+        // Fallback: try to extract from asset name or use current date
+        this._logger?.LogWarning(
+            "Could not find release for asset {AssetName}. Using current date as build date.",
+            asset.Name);
+        return DateTime.Now;
     }
 
-    private static string ExtractBuildDateFromTag(string tag)
+    private static DateTime ExtractBuildDateFromTag(string tag)
     {
         // Extract build date from release tag (typically YYYYMMDD format)
         var buildDateMatch = System.Text.RegularExpressions.Regex.Match(tag, @"(\d{8})");
         if (buildDateMatch.Success)
         {
-            return buildDateMatch.Groups[1].Value;
+            var dateStr = buildDateMatch.Groups[1].Value;
+            if (DateTime.TryParseExact(dateStr, "yyyyMMdd", null, System.Globalization.DateTimeStyles.None, out var date))
+            {
+                return date;
+            }
         }
         
         // Try YYYY-MM-DD format
         buildDateMatch = System.Text.RegularExpressions.Regex.Match(tag, @"(\d{4}-\d{2}-\d{2})");
         if (buildDateMatch.Success)
         {
-            return buildDateMatch.Groups[1].Value.Replace("-", "");
+            var dateStr = buildDateMatch.Groups[1].Value;
+            if (DateTime.TryParseExact(dateStr, "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out var date))
+            {
+                return date;
+            }
         }
         
-        return "unknown";
-    }
-
-    private static bool IsOctokitRelatedException(Exception ex)
-    {
-        // Check if the exception is related to Octokit (e.g., missing assembly, initialization issues)
-        var typeName = ex.GetType().FullName ?? string.Empty;
-        return typeName.Contains("Octokit", StringComparison.OrdinalIgnoreCase) ||
-               ex is TypeLoadException ||
-               ex is MissingMethodException ||
-               ex is DllNotFoundException;
+        // If we can't parse it, return current date
+        return DateTime.Now;
     }
     
     private string FindPythonInstallPath(string extractedDirectory)
@@ -439,7 +385,7 @@ public abstract class BasePythonManager
 
     public BasePythonRuntime GetOrCreateInstance(
         string pythonVersion,
-        string? buildDate = null)
+        DateTime? buildDate = null)
     {
         Task<BasePythonRuntime> task = GetOrCreateInstanceAsync(pythonVersion, buildDate);
         task.Wait(cancellationToken: default);
@@ -448,7 +394,7 @@ public abstract class BasePythonManager
 
     public async Task<bool> DeleteInstanceAsync(
         string pythonVersion,
-        string? buildDate = null,
+        DateTime? buildDate = null,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(pythonVersion))
@@ -456,7 +402,7 @@ public abstract class BasePythonManager
             throw new ArgumentException("Python version cannot be null or empty.", nameof(pythonVersion));
         }
         
-        this._logger?.LogInformation("Deleting Python instance: Version={Version}, BuildDate={BuildDate}", pythonVersion, buildDate);
+        this._logger?.LogInformation("Deleting Python instance: Version={Version}, BuildDate={BuildDate}", pythonVersion, buildDate?.ToString("yyyy-MM-dd") ?? "latest");
         
         var instance = this._metadata.FindInstance(pythonVersion, buildDate);
         var result = this._metadata.RemoveInstance(pythonVersion, buildDate);
@@ -474,7 +420,7 @@ public abstract class BasePythonManager
     
     public bool DeleteInstance(
         string pythonVersion,
-        string? buildDate = null)
+        DateTime? buildDate = null)
     {
         Task<bool> task = DeleteInstanceAsync(pythonVersion, buildDate);
         task.Wait(cancellationToken: default);
@@ -535,7 +481,7 @@ public abstract class BasePythonManager
     /// <param name="pythonVersion">The Python version.</param>
     /// <param name="buildDate">The build date (optional, uses latest if not specified).</param>
     /// <returns>Instance metadata if found, null otherwise.</returns>
-    public InstanceMetadata? GetInstanceInfo(string pythonVersion, string? buildDate = null)
+    public InstanceMetadata? GetInstanceInfo(string pythonVersion, DateTime? buildDate = null)
     {
         if (string.IsNullOrWhiteSpace(pythonVersion))
             throw new ArgumentException("Python version cannot be null or empty.", nameof(pythonVersion));
@@ -550,7 +496,7 @@ public abstract class BasePythonManager
     /// <param name="pythonVersion">The Python version.</param>
     /// <param name="buildDate">The build date (optional, uses latest if not specified).</param>
     /// <returns>The size in bytes, or 0 if the instance is not found.</returns>
-    public long GetInstanceSize(string pythonVersion, string? buildDate = null)
+    public long GetInstanceSize(string pythonVersion, DateTime? buildDate = null)
     {
         var instance = GetInstanceInfo(pythonVersion, buildDate);
         if (instance == null || string.IsNullOrWhiteSpace(instance.Directory))
@@ -584,7 +530,7 @@ public abstract class BasePythonManager
     /// <param name="pythonVersion">The Python version.</param>
     /// <param name="buildDate">The build date (optional, uses latest if not specified).</param>
     /// <returns>True if the instance appears valid, false otherwise.</returns>
-    public bool ValidateInstanceIntegrity(string pythonVersion, string? buildDate = null)
+    public bool ValidateInstanceIntegrity(string pythonVersion, DateTime? buildDate = null)
     {
         var instance = GetInstanceInfo(pythonVersion, buildDate);
         if (instance == null || string.IsNullOrWhiteSpace(instance.Directory))
@@ -656,7 +602,7 @@ public abstract class BasePythonManager
     /// <returns>The Python runtime instance.</returns>
     public async Task<BasePythonRuntime> EnsurePythonVersionAsync(
         string pythonVersion,
-        string? buildDate = null,
+        DateTime? buildDate = null,
         CancellationToken cancellationToken = default)
     {
         return await GetOrCreateInstanceAsync(pythonVersion, buildDate, cancellationToken).ConfigureAwait(false);
@@ -665,7 +611,7 @@ public abstract class BasePythonManager
     /// <summary>
     /// Ensures that a specific Python version is available (synchronous version).
     /// </summary>
-    public BasePythonRuntime EnsurePythonVersion(string pythonVersion, string? buildDate = null)
+    public BasePythonRuntime EnsurePythonVersion(string pythonVersion, DateTime? buildDate = null)
     {
         Task<BasePythonRuntime> task = EnsurePythonVersionAsync(pythonVersion, buildDate);
         task.Wait();
@@ -871,7 +817,7 @@ public abstract class BasePythonManager
     public async Task<string> ExportInstanceAsync(
         string pythonVersion,
         string outputPath,
-        string? buildDate = null,
+        DateTime? buildDate = null,
         CancellationToken cancellationToken = default)
     {
         var instance = GetInstanceInfo(pythonVersion, buildDate);
@@ -966,7 +912,7 @@ public abstract class BasePythonManager
                 var tempMetadata = new InstanceMetadata
                 {
                     PythonVersion = "unknown",
-                    BuildDate = DateTime.Now.ToString("yyyyMMdd"),
+                    BuildDate = DateTime.Now,
                     Directory = pythonInstallPath ?? tempDir
                 };
                 var tempRuntime = GetPythonRuntimeForInstance(tempMetadata);
@@ -979,7 +925,7 @@ public abstract class BasePythonManager
                 importedMetadata = new InstanceMetadata
                 {
                     PythonVersion = detectedVersion,
-                    BuildDate = DateTime.Now.ToString("yyyyMMdd"),
+                    BuildDate = DateTime.Now,
                     Directory = pythonInstallPath ?? tempDir,
                     InstallationDate = DateTime.Now,
                     WasLatestBuild = false
@@ -987,7 +933,7 @@ public abstract class BasePythonManager
             }
 
             // Move to final location
-            var finalPath = Path.Combine(_rootDirectory, $"python-{importedMetadata.PythonVersion}-{importedMetadata.BuildDate}");
+            var finalPath = Path.Combine(_rootDirectory, $"python-{importedMetadata.PythonVersion}-{importedMetadata.BuildDate:yyyyMMdd}");
             if (Directory.Exists(finalPath))
             {
                 throw new InvalidOperationException($"Instance already exists at: {finalPath}");

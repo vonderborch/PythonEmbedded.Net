@@ -94,47 +94,8 @@ public class ManagerConfigurationTests
         Assert.Throws<ArgumentNullException>(() => manager.Configuration = null!);
     }
 
-    [Test]
-    [Category("Integration")]
-    public async Task GetOrCreateInstanceAsync_WithDefaultVersion_UsesConfiguration()
-    {
-        // Arrange
-        var config = new ManagerConfiguration
-        {
-            DefaultPythonVersion = "3.12"
-        };
-        var manager = new PythonEmbedded.Net.PythonManager(_testDirectory, _githubClient, configuration: config);
-
-        // Act - Don't specify version, should use default from configuration
-        var runtime = await manager.GetOrCreateInstanceAsync(cancellationToken: default);
-
-        // Assert
-        Assert.That(runtime, Is.Not.Null);
-        // The instance should be for the default version from configuration
-        var instances = manager.ListInstances();
-        Assert.That(instances.Count, Is.GreaterThan(0));
-        Assert.That(instances[0].PythonVersion, Does.StartWith("3.12"));
-    }
-
-    [Test]
-    [Category("Integration")]
-    public async Task GetOrCreateInstanceAsync_WithExplicitVersion_OverridesConfiguration()
-    {
-        // Arrange
-        var config = new ManagerConfiguration
-        {
-            DefaultPythonVersion = "3.11"
-        };
-        var manager = new PythonEmbedded.Net.PythonManager(_testDirectory, _githubClient, configuration: config);
-
-        // Act - Specify version explicitly, should override default
-        var runtime = await manager.GetOrCreateInstanceAsync("3.12", cancellationToken: default);
-
-        // Assert
-        Assert.That(runtime, Is.Not.Null);
-        var instances = manager.ListInstances();
-        Assert.That(instances[0].PythonVersion, Does.StartWith("3.12"));
-    }
+    // Integration tests that require GitHub API access have been moved to:
+    // test/automated/PythonEmbedded.Net.IntegrationTest/Manager/ManagerConfigurationIntegrationTests.cs
 
     [Test]
     public void ManagerConfiguration_DefaultValues_AreCorrect()
