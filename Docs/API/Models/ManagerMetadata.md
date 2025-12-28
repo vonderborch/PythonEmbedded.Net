@@ -101,3 +101,4 @@ var instances = manager.ListInstances(); // Uses ManagerMetadata internally
 - [InstanceMetadata](./InstanceMetadata.md) - Individual instance metadata
 - [BasePythonManager](../Managers/BasePythonManager.md) - Uses ManagerMetadata internally
 
+

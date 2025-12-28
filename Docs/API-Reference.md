@@ -292,6 +292,50 @@ Task<PythonExecutionResult> InstallPackageAsync(
 
 Installs a Python package using pip.
 
+**Parameters:**
+- `packageSpecification`: The package specification (e.g., "numpy", "torch==2.0.0", "numpy>=1.20.0").
+- `upgrade`: Whether to upgrade the package if it's already installed.
+- `indexUrl`: Optional custom PyPI index URL to use for this installation.
+- `cancellationToken`: Cancellation token.
+
+**Returns:** The execution result from pip.
+
+##### InstallRequirementsAsync
+
+```csharp
+Task<PythonExecutionResult> InstallRequirementsAsync(
+    string requirementsFilePath,
+    bool upgrade = false,
+    CancellationToken cancellationToken = default)
+```
+
+Installs Python packages from a requirements.txt file.
+
+**Parameters:**
+- `requirementsFilePath`: The path to the requirements.txt file.
+- `upgrade`: Whether to upgrade packages if they're already installed.
+- `cancellationToken`: Cancellation token.
+
+**Returns:** The execution result from pip.
+
+##### InstallPyProjectAsync
+
+```csharp
+Task<PythonExecutionResult> InstallPyProjectAsync(
+    string pyProjectFilePath,
+    bool editable = false,
+    CancellationToken cancellationToken = default)
+```
+
+Installs a Python package from a pyproject.toml file (using pip install).
+
+**Parameters:**
+- `pyProjectFilePath`: The path to the directory containing pyproject.toml or the pyproject.toml file itself.
+- `editable`: Whether to install in editable mode (pip install -e).
+- `cancellationToken`: Cancellation token.
+
+**Returns:** The execution result from pip.
+
 ##### ListInstalledPackagesAsync
 
 ```csharp
@@ -346,10 +390,12 @@ Upgrades all installed packages.
 ##### ListOutdatedPackagesAsync
 
 ```csharp
-Task<IReadOnlyList<PackageInfo>> ListOutdatedPackagesAsync(CancellationToken cancellationToken = default)
+Task<IReadOnlyList<OutdatedPackageInfo>> ListOutdatedPackagesAsync(CancellationToken cancellationToken = default)
 ```
 
-Lists packages with available updates.
+Lists packages that have available updates.
+
+**Returns:** A list of outdated packages with their current and latest versions.
 
 ##### DowngradePackageAsync
 
@@ -362,13 +408,33 @@ Task<PythonExecutionResult> DowngradePackageAsync(
 
 Downgrades a package to a specific version.
 
+##### ExportRequirementsAsync
+
+```csharp
+Task<PythonExecutionResult> ExportRequirementsAsync(string outputPath, CancellationToken cancellationToken = default)
+```
+
+Exports installed packages to a requirements.txt file (with version constraints).
+
+**Parameters:**
+- `outputPath`: The path where to write the requirements.txt file.
+- `cancellationToken`: Cancellation token.
+
+**Returns:** The execution result from pip.
+
 ##### ExportRequirementsFreezeAsync
 
 ```csharp
-Task<string> ExportRequirementsFreezeAsync(string outputPath, CancellationToken cancellationToken = default)
+Task<PythonExecutionResult> ExportRequirementsFreezeAsync(string outputPath, CancellationToken cancellationToken = default)
 ```
 
 Exports installed packages to a requirements.txt file with exact versions (pip freeze).
+
+**Parameters:**
+- `outputPath`: The path where to write the requirements.txt file.
+- `cancellationToken`: Cancellation token.
+
+**Returns:** The execution result from pip.
 
 ##### ExportRequirementsFreezeToStringAsync
 
@@ -376,7 +442,9 @@ Exports installed packages to a requirements.txt file with exact versions (pip f
 Task<string> ExportRequirementsFreezeToStringAsync(CancellationToken cancellationToken = default)
 ```
 
-Gets pip freeze output as a string.
+Exports installed packages as a requirements.txt string (with exact versions from pip freeze).
+
+**Returns:** The requirements.txt content as a string.
 
 ##### InstallPackagesAsync
 
@@ -384,10 +452,19 @@ Gets pip freeze output as a string.
 Task<Dictionary<string, PythonExecutionResult>> InstallPackagesAsync(
     IEnumerable<string> packages,
     bool parallel = false,
+    bool upgrade = false,
     CancellationToken cancellationToken = default)
 ```
 
-Installs multiple packages.
+Installs multiple packages in batch.
+
+**Parameters:**
+- `packages`: The list of package specifications to install.
+- `parallel`: Whether to install packages in parallel.
+- `upgrade`: Whether to upgrade packages if they're already installed.
+- `cancellationToken`: Cancellation token.
+
+**Returns:** A dictionary mapping package names to their installation results.
 
 ##### UninstallPackagesAsync
 
@@ -395,10 +472,19 @@ Installs multiple packages.
 Task<Dictionary<string, PythonExecutionResult>> UninstallPackagesAsync(
     IEnumerable<string> packages,
     bool parallel = false,
+    bool removeDependencies = false,
     CancellationToken cancellationToken = default)
 ```
 
-Uninstalls multiple packages.
+Uninstalls multiple packages in batch.
+
+**Parameters:**
+- `packages`: The list of package names to uninstall.
+- `parallel`: Whether to uninstall packages in parallel.
+- `removeDependencies`: Whether to remove dependencies.
+- `cancellationToken`: Cancellation token.
+
+**Returns:** A dictionary mapping package names to their uninstallation results.
 
 ##### GetPipVersionAsync
 
@@ -436,6 +522,83 @@ Task<PyPIPackageInfo?> GetPackageMetadataAsync(
 ```
 
 Gets package metadata from PyPI.
+
+**Parameters:**
+- `packageName`: The name of the package.
+- `version`: Optional version. If not specified, returns the latest version.
+- `cancellationToken`: Cancellation token.
+
+**Returns:** Package metadata, or null if not found.
+
+##### GetPipConfigurationAsync
+
+```csharp
+Task<PipConfiguration> GetPipConfigurationAsync(CancellationToken cancellationToken = default)
+```
+
+Gets the current pip configuration.
+
+**Returns:** Pip configuration information including index URL, trusted host, and proxy settings.
+
+##### ConfigurePipIndexAsync
+
+```csharp
+Task<PythonExecutionResult> ConfigurePipIndexAsync(
+    string indexUrl,
+    bool trusted = false,
+    CancellationToken cancellationToken = default)
+```
+
+Configures pip to use a custom index URL.
+
+**Parameters:**
+- `indexUrl`: The index URL to use.
+- `trusted`: Whether to mark the host as trusted.
+- `cancellationToken`: Cancellation token.
+
+**Returns:** The execution result from pip.
+
+##### ConfigurePipProxyAsync
+
+```csharp
+Task<PythonExecutionResult> ConfigurePipProxyAsync(
+    string proxyUrl,
+    CancellationToken cancellationToken = default)
+```
+
+Configures pip proxy settings.
+
+**Parameters:**
+- `proxyUrl`: The proxy URL to use.
+- `cancellationToken`: Cancellation token.
+
+**Returns:** The execution result from pip.
+
+##### ValidatePythonVersionString
+
+```csharp
+static bool ValidatePythonVersionString(string version)
+```
+
+Validates that a Python version string is in a valid format.
+
+**Parameters:**
+- `version`: The version string to validate.
+
+**Returns:** True if the version string is valid, false otherwise.
+
+##### ValidatePackageSpecification
+
+```csharp
+static bool ValidatePackageSpecification(string packageSpec)
+```
+
+Validates that a package specification is in a valid format.
+
+**Parameters:**
+- `packageSpec`: The package specification to validate.
+
+**Returns:** True if the package specification is valid, false otherwise.
 
 ##### ValidatePythonInstallationAsync
 
@@ -488,23 +651,31 @@ IReadOnlyList<string> ListVirtualEnvironments()
 
 Lists all virtual environments.
 
-##### GetVirtualEnvironmentSizeAsync
+##### GetVirtualEnvironmentSize
 
 ```csharp
-Task<long> GetVirtualEnvironmentSizeAsync(string name, CancellationToken cancellationToken = default)
+long GetVirtualEnvironmentSize(string name)
 ```
 
 Gets the disk size of a virtual environment in bytes.
 
-##### GetVirtualEnvironmentInfoAsync
+**Parameters:**
+- `name`: The name of the virtual environment.
+
+**Returns:** The size in bytes.
+
+##### GetVirtualEnvironmentInfo
 
 ```csharp
-Task<Dictionary<string, object>> GetVirtualEnvironmentInfoAsync(
-    string name,
-    CancellationToken cancellationToken = default)
+Dictionary<string, object> GetVirtualEnvironmentInfo(string name)
 ```
 
 Gets detailed information about a virtual environment.
+
+**Parameters:**
+- `name`: The name of the virtual environment.
+
+**Returns:** A dictionary containing information about the virtual environment.
 
 ##### CloneVirtualEnvironmentAsync
 
@@ -554,6 +725,7 @@ public PythonManager(
     string directory,
     GitHubClient githubClient,
     ILogger<PythonManager>? logger = null,
+    ILoggerFactory? loggerFactory = null,
     IMemoryCache? cache = null,
     ManagerConfiguration? configuration = null)
 ```
@@ -569,9 +741,30 @@ public PythonNetManager(
     string directory,
     GitHubClient githubClient,
     ILogger<PythonNetManager>? logger = null,
+    ILoggerFactory? loggerFactory = null,
     IMemoryCache? cache = null,
     ManagerConfiguration? configuration = null)
 ```
+
+### PythonRootRuntime
+
+Concrete implementation of `BasePythonRootRuntime` for subprocess-based execution.
+
+### PythonNetRootRuntime
+
+Concrete implementation of `BasePythonRootRuntime` for Python.NET-based execution. Implements `IDisposable`.
+
+### PythonRootVirtualEnvironment
+
+Concrete implementation of `BasePythonVirtualRuntime` for subprocess-based execution.
+
+### PythonNetVirtualEnvironment
+
+Concrete implementation of `BasePythonVirtualRuntime` for Python.NET-based execution. Implements `IDisposable`.
+
+### BasePythonVirtualRuntime
+
+Abstract base class for Python virtual environment runtime implementations. Extends `BasePythonRuntime`.
 
 ---
 
@@ -597,12 +790,32 @@ Represents information about an installed Python package.
 **Properties:**
 - `Name` (string): Package name
 - `Version` (string): Package version
-- `Summary` (string?): Package summary
 - `Location` (string?): Installation location
+- `Summary` (string?): Package summary
+
+### OutdatedPackageInfo
+
+Represents information about an outdated package (available update).
+
+**Properties:**
+- `Name` (string): Package name
+- `InstalledVersion` (string): Currently installed version
+- `LatestVersion` (string): Latest available version
 
 ### PyPIPackageInfo
 
 Represents package metadata from PyPI.
+
+**Properties:**
+- `Name` (string): Package name
+- `Version` (string): Package version
+- `Summary` (string?): Package summary
+- `Description` (string?): Package description
+- `Author` (string?): Package author
+- `AuthorEmail` (string?): Author email
+- `HomePage` (string?): Package homepage URL
+- `License` (string?): Package license
+- `RequiresPython` (IReadOnlyList<string>?): Python version requirements
 
 ### PyPISearchResult
 
@@ -611,7 +824,27 @@ Represents a simplified search result from PyPI.
 **Properties:**
 - `Name` (string): Package name
 - `Version` (string): Package version
-- `Summary` (string): Package summary
+- `Summary` (string?): Package summary
+
+### PipConfiguration
+
+Represents pip configuration information.
+
+**Properties:**
+- `IndexUrl` (string?): PyPI index URL
+- `TrustedHost` (string?): Trusted host
+- `Proxy` (string?): Proxy URL
+
+### InstanceMetadata
+
+Represents metadata associated with a Python runtime instance.
+
+**Properties:**
+- `PythonVersion` (string): The version of Python
+- `BuildDate` (DateTime): The date indicating when the build was created
+- `WasLatestBuild` (bool): Whether the build was the latest at installation time
+- `InstallationDate` (DateTime): The date and time when the installation was completed
+- `Directory` (string): The directory path associated with the Python runtime instance (read-only)
 
 ---
 
@@ -623,3 +856,10 @@ Represents a simplified search result from PyPI.
 - `PackageInstallationException`: Thrown when package installation fails
 - `PythonNotInstalledException`: Thrown when Python installation is missing or invalid
 - `PlatformNotSupportedException`: Thrown when the platform is not supported
+- `InvalidPackageSpecificationException`: Thrown when a package specification is invalid
+- `InvalidPythonVersionException`: Thrown when a Python version string is invalid
+- `MetadataCorruptedException`: Thrown when instance metadata is corrupted
+- `PythonNetExecutionException`: Thrown when Python.NET execution fails (extends `PythonExecutionException`)
+- `PythonNetInitializationException`: Thrown when Python.NET initialization fails
+- `RequirementsFileException`: Thrown when requirements file installation fails (extends `PackageInstallationException`)
+- `VirtualEnvironmentNotFoundException`: Thrown when a virtual environment is not found
