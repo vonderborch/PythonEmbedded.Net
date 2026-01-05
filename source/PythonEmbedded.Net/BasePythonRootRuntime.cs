@@ -99,7 +99,13 @@ public abstract class BasePythonRootRuntime : BasePythonRuntime
             this.Logger?.LogInformation("Using existing virtual environment: {Name} at {Path}", name, actualVenvPath);
         }
 
-        return CreateVirtualRuntimeInstance(actualVenvPath);
+        // Create the virtual runtime instance
+        var venvRuntime = CreateVirtualRuntimeInstance(actualVenvPath);
+        
+        // Ensure uv is available in the virtual environment
+        await venvRuntime.EnsureUvInstalledAsync(cancellationToken).ConfigureAwait(false);
+        
+        return venvRuntime;
     }
 
     /// <summary>
@@ -518,7 +524,11 @@ public abstract class BasePythonRootRuntime : BasePythonRuntime
 
             this.Logger?.LogInformation("Successfully cloned virtual environment {Source} to {Target}", sourceName, targetName);
 
-            return CreateVirtualRuntimeInstance(targetPath);
+            // Create the virtual runtime instance and ensure uv is available
+            var venvRuntime = CreateVirtualRuntimeInstance(targetPath);
+            await venvRuntime.EnsureUvInstalledAsync(cancellationToken).ConfigureAwait(false);
+            
+            return venvRuntime;
         }
         catch (Exception ex)
         {
@@ -653,7 +663,11 @@ public abstract class BasePythonRootRuntime : BasePythonRuntime
 
             this.Logger?.LogInformation("Successfully imported virtual environment {Name} from {Path}", name, archivePath);
 
-            return CreateVirtualRuntimeInstance(targetPath);
+            // Create the virtual runtime instance and ensure uv is available
+            var venvRuntime = CreateVirtualRuntimeInstance(targetPath);
+            await venvRuntime.EnsureUvInstalledAsync(cancellationToken).ConfigureAwait(false);
+            
+            return venvRuntime;
         }
         catch (Exception ex)
         {
