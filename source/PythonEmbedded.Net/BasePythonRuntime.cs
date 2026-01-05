@@ -58,6 +58,257 @@ public abstract class BasePythonRuntime
     protected abstract void ValidateInstallation();
 
     /// <summary>
+    /// Gets the detected path to the uv executable, or null if not found.
+    /// </summary>
+    public string? UvPath { get; private set; }
+
+    /// <summary>
+    /// Gets whether uv is available for use.
+    /// </summary>
+    public bool IsUvAvailable => !string.IsNullOrEmpty(UvPath);
+
+    private bool _uvDetected;
+
+    /// <summary>
+    /// Detects if uv is installed and available on the system.
+    /// </summary>
+    /// <param name="customPath">Optional custom path to uv executable.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>True if uv is available, false otherwise.</returns>
+    public async Task<bool> DetectUvAsync(string? customPath = null, CancellationToken cancellationToken = default)
+    {
+        if (_uvDetected && UvPath != null)
+            return true;
+
+        // If custom path is provided, check it first
+        if (!string.IsNullOrEmpty(customPath))
+        {
+            if (await IsUvExecutableValidAsync(customPath, cancellationToken).ConfigureAwait(false))
+            {
+                UvPath = customPath;
+                _uvDetected = true;
+                this.Logger?.LogInformation("uv detected at custom path: {Path}", UvPath);
+                return true;
+            }
+        }
+
+        // Common locations to search for uv
+        var candidates = GetUvCandidatePaths();
+
+        foreach (var candidate in candidates)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (await IsUvExecutableValidAsync(candidate, cancellationToken).ConfigureAwait(false))
+            {
+                UvPath = candidate;
+                _uvDetected = true;
+                this.Logger?.LogInformation("uv detected: {Path}", UvPath);
+                return true;
+            }
+        }
+
+        _uvDetected = true; // Mark as detected (but not found)
+        this.Logger?.LogWarning("uv not found on system. Package operations require uv. Call EnsureUvInstalledAsync() to install it.");
+        return false;
+    }
+
+    /// <summary>
+    /// Gets candidate paths where uv might be installed.
+    /// </summary>
+    private static string[] GetUvCandidatePaths()
+    {
+        var candidates = new List<string> { "uv" }; // In PATH
+
+        var homeDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+        if (OperatingSystem.IsWindows())
+        {
+            candidates.AddRange([
+                Path.Combine(homeDir, ".cargo", "bin", "uv.exe"),
+                Path.Combine(homeDir, ".local", "bin", "uv.exe"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "uv", "uv.exe"),
+            ]);
+        }
+        else if (OperatingSystem.IsMacOS())
+        {
+            candidates.AddRange([
+                Path.Combine(homeDir, ".cargo", "bin", "uv"),
+                Path.Combine(homeDir, ".local", "bin", "uv"),
+                "/opt/homebrew/bin/uv",
+                "/usr/local/bin/uv",
+            ]);
+        }
+        else // Linux
+        {
+            candidates.AddRange([
+                Path.Combine(homeDir, ".cargo", "bin", "uv"),
+                Path.Combine(homeDir, ".local", "bin", "uv"),
+                "/usr/local/bin/uv",
+                "/usr/bin/uv",
+            ]);
+        }
+
+        return candidates.ToArray();
+    }
+
+    /// <summary>
+    /// Checks if a uv executable path is valid and working.
+    /// </summary>
+    private async Task<bool> IsUvExecutableValidAsync(string path, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = path,
+                Arguments = "--version",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                RedirectStandardInput = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            using var process = Process.Start(startInfo);
+            if (process == null)
+                return false;
+
+            process.StandardInput.Close();
+            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+
+            return process.ExitCode == 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Executes a uv command and returns the result.
+    /// </summary>
+    /// <param name="arguments">The arguments to pass to uv.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="workingDirectory">Optional working directory.</param>
+    /// <returns>The execution result.</returns>
+    protected async Task<PythonExecutionResult> ExecuteUvAsync(
+        IEnumerable<string> arguments,
+        CancellationToken cancellationToken = default,
+        string? workingDirectory = null)
+    {
+        if (!IsUvAvailable)
+            throw new InvalidOperationException("uv is not available. Call DetectUvAsync first.");
+
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = UvPath!,
+            WorkingDirectory = workingDirectory ?? WorkingDirectory,
+            UseShellExecute = false,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8
+        };
+
+        foreach (var arg in arguments)
+        {
+            startInfo.ArgumentList.Add(arg);
+        }
+
+        this.Logger?.LogDebug("Executing uv: {Args}", string.Join(" ", arguments));
+
+        var result = await ProcessExecutor.ExecuteAsync(
+            startInfo,
+            null,
+            null,
+            null,
+            cancellationToken).ConfigureAwait(false);
+
+        return new PythonExecutionResult(result.ExitCode, result.StandardOutput, result.StandardError);
+    }
+
+    /// <summary>
+    /// Ensures uv is installed, attempting to install it via pip if not found.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>True if uv is available after this call, false otherwise.</returns>
+    public async Task<bool> EnsureUvInstalledAsync(CancellationToken cancellationToken = default)
+    {
+        // First check if already available
+        if (await DetectUvAsync(cancellationToken: cancellationToken).ConfigureAwait(false))
+            return true;
+
+        this.Logger?.LogInformation("uv not found, attempting to install via pip...");
+
+        try
+        {
+            // Install uv via pip
+            var result = await ExecuteProcessAsync(
+                ["-m", "pip", "install", "uv"],
+                null, null, null,
+                cancellationToken, null, null).ConfigureAwait(false);
+
+            if (result.ExitCode != 0)
+            {
+                this.Logger?.LogWarning("Failed to install uv via pip: {Error}", result.StandardError);
+                return false;
+            }
+
+            // Re-detect uv after installation
+            _uvDetected = false;
+            return await DetectUvAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            this.Logger?.LogWarning(ex, "Failed to install uv");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Ensures that uv is available for package operations.
+    /// Automatically detects and installs uv if not already available.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <exception cref="InvalidOperationException">Thrown if uv cannot be detected or installed.</exception>
+    protected async Task EnsureUvAvailableAsync(CancellationToken cancellationToken = default)
+    {
+        if (IsUvAvailable)
+            return;
+
+        // Try to detect uv first
+        if (await DetectUvAsync(cancellationToken: cancellationToken).ConfigureAwait(false))
+            return;
+
+        // Try to install uv
+        this.Logger?.LogInformation("uv not found, attempting to auto-install...");
+        if (await EnsureUvInstalledAsync(cancellationToken).ConfigureAwait(false))
+            return;
+
+        throw new InvalidOperationException(
+            "uv is required for package operations but could not be detected or installed. " +
+            "Please install uv manually (https://docs.astral.sh/uv/getting-started/installation/).");
+    }
+
+    /// <summary>
+    /// Validates that uv is available for package operations.
+    /// Throws an exception if uv is not available.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Thrown if uv is not available.</exception>
+    protected void ValidateUvAvailable()
+    {
+        if (!IsUvAvailable)
+        {
+            throw new InvalidOperationException(
+                "uv is not available. uv should be installed when the runtime or virtual environment is created. " +
+                "If this runtime was created manually, call EnsureUvInstalledAsync() first.");
+        }
+    }
+
+    /// <summary>
     /// Performs a comprehensive health check of the Python installation.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -288,13 +539,13 @@ public abstract class BasePythonRuntime
     }
 
     /// <summary>
-    /// Installs a Python package using pip.
+    /// Installs a Python package using pip or uv.
     /// </summary>
     /// <param name="packageSpecification">The package specification (e.g., "numpy", "torch==2.0.0", "numpy>=1.20.0").</param>
     /// <param name="upgrade">Whether to upgrade the package if it's already installed.</param>
     /// <param name="indexUrl">Optional custom PyPI index URL to use for this installation.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The execution result from pip.</returns>
+    /// <returns>The execution result from uv.</returns>
     public async Task<PythonExecutionResult> InstallPackageAsync(
         string packageSpecification,
         bool upgrade = false,
@@ -305,60 +556,48 @@ public abstract class BasePythonRuntime
             throw new ArgumentException("Package specification cannot be null or empty.", nameof(packageSpecification));
 
         ValidateInstallation();
+        ValidateUvAvailable();
 
         this.Logger?.LogInformation("Installing Python package: {Package}", packageSpecification);
 
-        var pipArgs = new List<string> { "-m", "pip", "install" };
+        var uvArgs = new List<string> { "pip", "install" };
+
         if (upgrade)
-        {
-            pipArgs.Add("--upgrade");
-        }
+            uvArgs.Add("--upgrade");
+
         if (!string.IsNullOrWhiteSpace(indexUrl))
         {
-            pipArgs.Add("--index-url");
-            pipArgs.Add(indexUrl);
+            uvArgs.Add("--index-url");
+            uvArgs.Add(indexUrl);
         }
-        pipArgs.Add(packageSpecification);
 
-        try
-        {
-            var result = await ExecuteProcessAsync(pipArgs, null, null, null, cancellationToken, null, null).ConfigureAwait(false);
+        uvArgs.Add("--python");
+        uvArgs.Add(PythonExecutablePath);
+        uvArgs.Add(packageSpecification);
 
-            if (result.ExitCode != 0)
-            {
-                throw new PackageInstallationException(
-                    $"Failed to install package '{packageSpecification}'. Exit code: {result.ExitCode}")
-                {
-                    PackageSpecification = packageSpecification,
-                    InstallationOutput = result.StandardOutput + result.StandardError
-                };
-            }
+        var result = await ExecuteUvAsync(uvArgs, cancellationToken).ConfigureAwait(false);
 
-            this.Logger?.LogInformation("Successfully installed package: {Package}", packageSpecification);
-            return result;
-        }
-        catch (PackageInstallationException)
-        {
-            throw;
-        }
-        catch (Exception ex)
+        if (result.ExitCode != 0)
         {
             throw new PackageInstallationException(
-                $"Failed to install package '{packageSpecification}': {ex.Message}",
-                ex)
+                $"Failed to install package '{packageSpecification}'. Exit code: {result.ExitCode}")
             {
-                PackageSpecification = packageSpecification
+                PackageSpecification = packageSpecification,
+                InstallationOutput = result.StandardOutput + result.StandardError
             };
         }
+
+        this.Logger?.LogInformation("Successfully installed package: {Package}", packageSpecification);
+        return result;
     }
 
     /// <summary>
-    /// Installs a Python package using pip (synchronous version).
+    /// Installs a Python package (synchronous version).
     /// </summary>
     /// <param name="packageSpecification">The package specification (e.g., "numpy", "torch==2.0.0", "numpy>=1.20.0").</param>
     /// <param name="upgrade">Whether to upgrade the package if it's already installed.</param>
     /// <param name="indexUrl">Optional custom PyPI index URL to use for this installation.</param>
-    /// <returns>The execution result from pip.</returns>
+    /// <returns>The execution result from uv.</returns>
     public PythonExecutionResult InstallPackage(
         string packageSpecification,
         bool upgrade = false,
@@ -375,7 +614,7 @@ public abstract class BasePythonRuntime
     /// <param name="requirementsFilePath">The path to the requirements.txt file.</param>
     /// <param name="upgrade">Whether to upgrade packages if they're already installed.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The execution result from pip.</returns>
+    /// <returns>The execution result from uv.</returns>
     public async Task<PythonExecutionResult> InstallRequirementsAsync(
         string requirementsFilePath,
         bool upgrade = false,
@@ -388,45 +627,32 @@ public abstract class BasePythonRuntime
             throw new FileNotFoundException($"Requirements file not found: {requirementsFilePath}", requirementsFilePath);
 
         ValidateInstallation();
+        ValidateUvAvailable();
 
         this.Logger?.LogInformation("Installing packages from requirements file: {FilePath}", requirementsFilePath);
 
-        var pipArgs = new List<string> { "-m", "pip", "install", "-r", requirementsFilePath };
+        var uvArgs = new List<string> { "pip", "install", "-r", requirementsFilePath };
+
         if (upgrade)
-        {
-            pipArgs.Add("--upgrade");
-        }
+            uvArgs.Add("--upgrade");
 
-        try
-        {
-            var result = await ExecuteProcessAsync(pipArgs, null, null, null, cancellationToken).ConfigureAwait(false);
+        uvArgs.Add("--python");
+        uvArgs.Add(PythonExecutablePath);
 
-            if (result.ExitCode != 0)
-            {
-                throw new RequirementsFileException(
-                    $"Failed to install packages from requirements file '{requirementsFilePath}'. Exit code: {result.ExitCode}")
-                {
-                    PackageSpecification = requirementsFilePath,
-                    InstallationOutput = result.StandardOutput + result.StandardError
-                };
-            }
+        var result = await ExecuteUvAsync(uvArgs, cancellationToken).ConfigureAwait(false);
 
-            this.Logger?.LogInformation("Successfully installed packages from requirements file: {FilePath}", requirementsFilePath);
-            return result;
-        }
-        catch (RequirementsFileException)
-        {
-            throw;
-        }
-        catch (Exception ex)
+        if (result.ExitCode != 0)
         {
             throw new RequirementsFileException(
-                $"Failed to install packages from requirements file '{requirementsFilePath}': {ex.Message}",
-                ex)
+                $"Failed to install packages from requirements file '{requirementsFilePath}'. Exit code: {result.ExitCode}")
             {
-                PackageSpecification = requirementsFilePath
+                PackageSpecification = requirementsFilePath,
+                InstallationOutput = result.StandardOutput + result.StandardError
             };
         }
+
+        this.Logger?.LogInformation("Successfully installed packages from requirements file: {FilePath}", requirementsFilePath);
+        return result;
     }
 
     /// <summary>
@@ -434,7 +660,7 @@ public abstract class BasePythonRuntime
     /// </summary>
     /// <param name="requirementsFilePath">The path to the requirements.txt file.</param>
     /// <param name="upgrade">Whether to upgrade packages if they're already installed.</param>
-    /// <returns>The execution result from pip.</returns>
+    /// <returns>The execution result from uv.</returns>
     public PythonExecutionResult InstallRequirements(
         string requirementsFilePath,
         bool upgrade = false)
@@ -445,12 +671,12 @@ public abstract class BasePythonRuntime
     }
 
     /// <summary>
-    /// Installs a Python package from a pyproject.toml file (using pip install).
+    /// Installs a Python package from a pyproject.toml file.
     /// </summary>
     /// <param name="pyProjectFilePath">The path to the directory containing pyproject.toml or the pyproject.toml file itself.</param>
-    /// <param name="editable">Whether to install in editable mode (pip install -e).</param>
+    /// <param name="editable">Whether to install in editable mode (-e).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The execution result from pip.</returns>
+    /// <returns>The execution result from uv.</returns>
     public async Task<PythonExecutionResult> InstallPyProjectAsync(
         string pyProjectFilePath,
         bool editable = false,
@@ -482,62 +708,42 @@ public abstract class BasePythonRuntime
         }
 
         ValidateInstallation();
+        ValidateUvAvailable();
 
         this.Logger?.LogInformation("Installing package from pyproject.toml: {Path} (editable: {Editable})",
             pyProjectTomlPath, editable);
 
-        var pipArgs = new List<string> { "-m", "pip", "install" };
+        var uvArgs = new List<string> { "pip", "install" };
         if (editable)
         {
-            pipArgs.Add("-e");
+            uvArgs.Add("-e");
         }
-        pipArgs.Add(projectDirectory);
+        uvArgs.Add(projectDirectory);
+        uvArgs.Add("--python");
+        uvArgs.Add(PythonExecutablePath);
 
-        try
-        {
-            // Execute pip install from the project directory
-            var result = await ExecuteProcessAsync(
-                pipArgs,
-                null,
-                null,
-                null,
-                cancellationToken,
-                projectDirectory).ConfigureAwait(false);
+        var result = await ExecuteUvAsync(uvArgs, cancellationToken, workingDirectory: projectDirectory).ConfigureAwait(false);
 
-            if (result.ExitCode != 0)
-            {
-                throw new PackageInstallationException(
-                    $"Failed to install package from pyproject.toml '{pyProjectTomlPath}'. Exit code: {result.ExitCode}")
-                {
-                    PackageSpecification = pyProjectTomlPath,
-                    InstallationOutput = result.StandardOutput + result.StandardError
-                };
-            }
-
-            this.Logger?.LogInformation("Successfully installed package from pyproject.toml: {Path}", pyProjectTomlPath);
-            return result;
-        }
-        catch (PackageInstallationException)
-        {
-            throw;
-        }
-        catch (Exception ex)
+        if (result.ExitCode != 0)
         {
             throw new PackageInstallationException(
-                $"Failed to install package from pyproject.toml '{pyProjectTomlPath}': {ex.Message}",
-                ex)
+                $"Failed to install package from pyproject.toml '{pyProjectTomlPath}'. Exit code: {result.ExitCode}")
             {
-                PackageSpecification = pyProjectTomlPath
+                PackageSpecification = pyProjectTomlPath,
+                InstallationOutput = result.StandardOutput + result.StandardError
             };
         }
+
+        this.Logger?.LogInformation("Successfully installed package from pyproject.toml: {Path}", pyProjectTomlPath);
+        return result;
     }
 
     /// <summary>
     /// Installs a Python package from a pyproject.toml file (synchronous version).
     /// </summary>
     /// <param name="pyProjectFilePath">The path to the directory containing pyproject.toml or the pyproject.toml file itself.</param>
-    /// <param name="editable">Whether to install in editable mode (pip install -e).</param>
-    /// <returns>The execution result from pip.</returns>
+    /// <param name="editable">Whether to install in editable mode (-e).</param>
+    /// <returns>The execution result from uv.</returns>
     public PythonExecutionResult InstallPyProject(
         string pyProjectFilePath,
         bool editable = false)
@@ -552,16 +758,16 @@ public abstract class BasePythonRuntime
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A list of installed packages with their versions.</returns>
-    public async Task<IReadOnlyList<Models.PackageInfo>> ListInstalledPackagesAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<Models.PackageInfo>> ListInstalledPackagesAsync(
+        CancellationToken cancellationToken = default)
     {
         ValidateInstallation();
+        ValidateUvAvailable();
 
         this.Logger?.LogDebug("Listing installed packages");
 
-        var result = await ExecuteProcessAsync(
-            ["-m", "pip", "list", "--format=json"],
-            null, null, null,
-            cancellationToken, null, null).ConfigureAwait(false);
+        var uvArgs = new List<string> { "pip", "list", "--format=json", "--python", PythonExecutablePath };
+        var result = await ExecuteUvAsync(uvArgs, cancellationToken).ConfigureAwait(false);
 
         if (result.ExitCode != 0)
         {
@@ -572,38 +778,23 @@ public abstract class BasePythonRuntime
             };
         }
 
-        // Parse JSON output from pip list --format=json
         var packages = new List<Models.PackageInfo>();
         try
         {
-            var jsonPackages = System.Text.Json.JsonSerializer.Deserialize<List<Dictionary<string, object>>>(result.StandardOutput);
+            var jsonPackages = System.Text.Json.JsonSerializer.Deserialize<List<Dictionary<string, string>>>(result.StandardOutput);
             if (jsonPackages != null)
             {
                 foreach (var pkg in jsonPackages)
                 {
-                    var name = pkg.TryGetValue("name", out var nameObj) ? nameObj?.ToString() ?? "" : "";
-                    var version = pkg.TryGetValue("version", out var versionObj) ? versionObj?.ToString() ?? "" : "";
+                    var name = pkg.TryGetValue("name", out var nameVal) ? nameVal ?? "" : "";
+                    var version = pkg.TryGetValue("version", out var versionVal) ? versionVal ?? "" : "";
                     packages.Add(new Models.PackageInfo(name, version));
                 }
             }
         }
         catch (Exception ex)
         {
-            // Fallback: parse legacy format
-            foreach (var line in result.StandardOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries))
-            {
-                var trimmed = line.Trim();
-                if (string.IsNullOrWhiteSpace(trimmed) || trimmed.StartsWith("Package", StringComparison.OrdinalIgnoreCase) || trimmed.StartsWith("---", StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                var parts = trimmed.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-                if (parts.Length >= 2)
-                {
-                    packages.Add(new Models.PackageInfo(parts[0], parts[1]));
-                }
-            }
-            
-            this.Logger?.LogWarning(ex, "Failed to parse pip list JSON output, used fallback parser");
+            this.Logger?.LogWarning(ex, "Failed to parse package list JSON output");
         }
 
         return packages.AsReadOnly();
@@ -625,17 +816,20 @@ public abstract class BasePythonRuntime
     /// <param name="packageName">The name of the package.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The package version if installed, null otherwise.</returns>
-    public async Task<string?> GetPackageVersionAsync(string packageName, CancellationToken cancellationToken = default)
+    public async Task<string?> GetPackageVersionAsync(
+        string packageName,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(packageName))
             throw new ArgumentException("Package name cannot be null or empty.", nameof(packageName));
 
         ValidateInstallation();
+        ValidateUvAvailable();
 
-        var result = await ExecuteProcessAsync(
-            ["-m", "pip", "show", packageName],
-            null, null, null,
-            cancellationToken, null, null).ConfigureAwait(false);
+        this.Logger?.LogDebug("Getting package version: {Package}", packageName);
+
+        var uvArgs = new List<string> { "pip", "show", packageName, "--python", PythonExecutablePath };
+        var result = await ExecuteUvAsync(uvArgs, cancellationToken).ConfigureAwait(false);
 
         if (result.ExitCode != 0)
             return null; // Package not found
@@ -668,10 +862,22 @@ public abstract class BasePythonRuntime
     /// <param name="packageName">The name of the package.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>True if the package is installed, false otherwise.</returns>
-    public async Task<bool> IsPackageInstalledAsync(string packageName, CancellationToken cancellationToken = default)
+    public async Task<bool> IsPackageInstalledAsync(
+        string packageName,
+        CancellationToken cancellationToken = default)
     {
-        var version = await GetPackageVersionAsync(packageName, cancellationToken).ConfigureAwait(false);
-        return version != null;
+        if (string.IsNullOrWhiteSpace(packageName))
+            throw new ArgumentException("Package name cannot be null or empty.", nameof(packageName));
+
+        ValidateInstallation();
+        ValidateUvAvailable();
+
+        this.Logger?.LogDebug("Checking if package is installed: {Package}", packageName);
+
+        var uvArgs = new List<string> { "pip", "show", packageName, "--python", PythonExecutablePath };
+        var result = await ExecuteUvAsync(uvArgs, cancellationToken).ConfigureAwait(false);
+
+        return result.ExitCode == 0;
     }
 
     /// <summary>
@@ -696,11 +902,12 @@ public abstract class BasePythonRuntime
             throw new ArgumentException("Package name cannot be null or empty.", nameof(packageName));
 
         ValidateInstallation();
+        ValidateUvAvailable();
 
-        var result = await ExecuteProcessAsync(
-            ["-m", "pip", "show", packageName],
-            null, null, null,
-            cancellationToken, null, null).ConfigureAwait(false);
+        this.Logger?.LogDebug("Getting package info: {Package}", packageName);
+
+        var uvArgs = new List<string> { "pip", "show", packageName, "--python", PythonExecutablePath };
+        var result = await ExecuteUvAsync(uvArgs, cancellationToken).ConfigureAwait(false);
 
         if (result.ExitCode != 0)
             return null; // Package not found
@@ -742,70 +949,121 @@ public abstract class BasePythonRuntime
     }
 
     /// <summary>
+    /// Determines which packages from a list are not installed.
+    /// Uses importlib.util.find_spec for fast checking without loading pip.
+    /// </summary>
+    /// <param name="packageNames">The names of packages to check.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>An array of package names that are not installed.</returns>
+    /// <remarks>
+    /// Performance: Single Python invocation for all packages, ~100-300ms total.
+    /// Useful for checking dependencies before installation.
+    /// </remarks>
+    public async Task<string[]> GetMissingPackagesAsync(string[] packageNames, CancellationToken cancellationToken = default)
+    {
+        if (packageNames == null || packageNames.Length == 0)
+            return [];
+
+        ValidateInstallation();
+
+        this.Logger?.LogDebug("Checking for missing packages: {Packages}", string.Join(", ", packageNames));
+
+        // Escape package names and convert hyphens to underscores for module lookup
+        var escapedPackages = packageNames
+            .Select(p => p.Replace("'", "\\'").Replace("-", "_").ToLowerInvariant())
+            .ToArray();
+
+        var packageList = string.Join("','", escapedPackages);
+
+        var script = $@"
+import importlib.util
+required = ['{packageList}']
+missing = [r for r in required if importlib.util.find_spec(r) is None]
+print(','.join(missing) if missing else '')
+".Trim();
+
+        var result = await ExecuteCommandAsync(script, cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        if (result.ExitCode != 0)
+        {
+            this.Logger?.LogWarning("Failed to check missing packages, assuming all are missing. Error: {Error}", result.StandardError);
+            return packageNames; // Assume all missing on error
+        }
+
+        var output = result.StandardOutput.Trim();
+        if (string.IsNullOrWhiteSpace(output))
+            return []; // All packages are installed
+
+        // Map back from underscore names to original names
+        var missingModules = output.Split(',', StringSplitOptions.RemoveEmptyEntries);
+        var missingPackages = new List<string>();
+
+        foreach (var originalName in packageNames)
+        {
+            var moduleName = originalName.Replace("-", "_").ToLowerInvariant();
+            if (missingModules.Contains(moduleName, StringComparer.OrdinalIgnoreCase))
+            {
+                missingPackages.Add(originalName);
+            }
+        }
+
+        return missingPackages.ToArray();
+    }
+
+    /// <summary>
+    /// Determines which packages from a list are not installed (synchronous version).
+    /// </summary>
+    public string[] GetMissingPackages(string[] packageNames)
+    {
+        Task<string[]> task = GetMissingPackagesAsync(packageNames);
+        task.Wait();
+        return task.Result;
+    }
+
+    /// <summary>
     /// Uninstalls a Python package.
     /// </summary>
     /// <param name="packageName">The name of the package to uninstall.</param>
-    /// <param name="removeDependencies">Whether to remove dependencies (pip uninstall -y).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The execution result from pip.</returns>
+    /// <returns>The execution result from uv.</returns>
     public async Task<PythonExecutionResult> UninstallPackageAsync(
         string packageName,
-        bool removeDependencies = false,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(packageName))
             throw new ArgumentException("Package name cannot be null or empty.", nameof(packageName));
 
         ValidateInstallation();
+        ValidateUvAvailable();
 
         this.Logger?.LogInformation("Uninstalling Python package: {Package}", packageName);
 
-        var pipArgs = new List<string> { "-m", "pip", "uninstall", packageName, "-y" };
-        if (removeDependencies)
-        {
-            // Note: pip uninstall doesn't have a built-in way to remove dependencies
-            // This would require additional logic to track and remove dependencies
-            // For now, we just uninstall the package itself
-        }
+        var uvArgs = new List<string> { "pip", "uninstall", packageName };
+        uvArgs.Add("--python");
+        uvArgs.Add(PythonExecutablePath);
 
-        try
-        {
-            var result = await ExecuteProcessAsync(pipArgs, null, null, null, cancellationToken).ConfigureAwait(false);
+        var result = await ExecuteUvAsync(uvArgs, cancellationToken).ConfigureAwait(false);
 
-            if (result.ExitCode != 0)
-            {
-                throw new Exceptions.PackageInstallationException(
-                    $"Failed to uninstall package '{packageName}'. Exit code: {result.ExitCode}")
-                {
-                    PackageSpecification = packageName,
-                    InstallationOutput = result.StandardOutput + result.StandardError
-                };
-            }
-
-            this.Logger?.LogInformation("Successfully uninstalled package: {Package}", packageName);
-            return result;
-        }
-        catch (Exceptions.PackageInstallationException)
-        {
-            throw;
-        }
-        catch (Exception ex)
+        if (result.ExitCode != 0)
         {
             throw new Exceptions.PackageInstallationException(
-                $"Failed to uninstall package '{packageName}': {ex.Message}",
-                ex)
+                $"Failed to uninstall package '{packageName}'. Exit code: {result.ExitCode}")
             {
-                PackageSpecification = packageName
+                PackageSpecification = packageName,
+                InstallationOutput = result.StandardOutput + result.StandardError
             };
         }
+
+        this.Logger?.LogInformation("Successfully uninstalled package: {Package}", packageName);
+        return result;
     }
 
     /// <summary>
     /// Uninstalls a Python package (synchronous version).
     /// </summary>
-    public PythonExecutionResult UninstallPackage(string packageName, bool removeDependencies = false)
+    public PythonExecutionResult UninstallPackage(string packageName)
     {
-        Task<PythonExecutionResult> task = UninstallPackageAsync(packageName, removeDependencies);
+        Task<PythonExecutionResult> task = UninstallPackageAsync(packageName);
         task.Wait();
         return task.Result;
     }
@@ -815,16 +1073,16 @@ public abstract class BasePythonRuntime
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A list of outdated packages with their current and latest versions.</returns>
-    public async Task<IReadOnlyList<Models.OutdatedPackageInfo>> ListOutdatedPackagesAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<Models.OutdatedPackageInfo>> ListOutdatedPackagesAsync(
+        CancellationToken cancellationToken = default)
     {
         ValidateInstallation();
+        ValidateUvAvailable();
 
         this.Logger?.LogDebug("Listing outdated packages");
 
-        var result = await ExecuteProcessAsync(
-            ["-m", "pip", "list", "--outdated", "--format=json"],
-            null, null, null,
-            cancellationToken, null, null).ConfigureAwait(false);
+        var uvArgs = new List<string> { "pip", "list", "--outdated", "--format=json", "--python", PythonExecutablePath };
+        var result = await ExecuteUvAsync(uvArgs, cancellationToken).ConfigureAwait(false);
 
         if (result.ExitCode != 0)
         {
@@ -835,10 +1093,18 @@ public abstract class BasePythonRuntime
             };
         }
 
+        return ParseOutdatedPackagesJson(result.StandardOutput);
+    }
+
+    /// <summary>
+    /// Parses JSON output from uv list --outdated.
+    /// </summary>
+    private IReadOnlyList<Models.OutdatedPackageInfo> ParseOutdatedPackagesJson(string jsonOutput)
+    {
         var outdatedPackages = new List<Models.OutdatedPackageInfo>();
         try
         {
-            var jsonPackages = System.Text.Json.JsonSerializer.Deserialize<List<Dictionary<string, object>>>(result.StandardOutput);
+            var jsonPackages = System.Text.Json.JsonSerializer.Deserialize<List<Dictionary<string, object>>>(jsonOutput);
             if (jsonPackages != null)
             {
                 foreach (var pkg in jsonPackages)
@@ -853,7 +1119,7 @@ public abstract class BasePythonRuntime
         catch (Exception ex)
         {
             // Fallback: parse legacy format
-            foreach (var line in result.StandardOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+            foreach (var line in jsonOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries))
             {
                 var trimmed = line.Trim();
                 if (string.IsNullOrWhiteSpace(trimmed) || trimmed.StartsWith("Package", StringComparison.OrdinalIgnoreCase) || trimmed.StartsWith("---", StringComparison.OrdinalIgnoreCase))
@@ -866,7 +1132,7 @@ public abstract class BasePythonRuntime
                 }
             }
             
-            this.Logger?.LogWarning(ex, "Failed to parse pip list --outdated JSON output, used fallback parser");
+            this.Logger?.LogWarning(ex, "Failed to parse list --outdated JSON output, used fallback parser");
         }
 
         return outdatedPackages.AsReadOnly();
@@ -894,7 +1160,7 @@ public abstract class BasePythonRuntime
         this.Logger?.LogInformation("Upgrading all installed packages");
 
         // Get list of outdated packages
-        var outdated = await ListOutdatedPackagesAsync(cancellationToken).ConfigureAwait(false);
+        var outdated = await ListOutdatedPackagesAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
         if (!outdated.Any())
         {
             this.Logger?.LogInformation("No packages to upgrade");
@@ -907,7 +1173,7 @@ public abstract class BasePythonRuntime
         {
             try
             {
-                    var result = await InstallPackageAsync(pkg.Name, upgrade: true, indexUrl: null, cancellationToken).ConfigureAwait(false);
+                    var result = await InstallPackageAsync(pkg.Name, upgrade: true, indexUrl: null, cancellationToken: cancellationToken).ConfigureAwait(false);
                 allResults.Add($"{pkg.Name}: Success");
             }
             catch (Exception ex)
@@ -952,7 +1218,7 @@ public abstract class BasePythonRuntime
         this.Logger?.LogInformation("Downgrading package {Package} to version {Version}", packageName, targetVersion);
 
         var packageSpec = $"{packageName}=={targetVersion}";
-        return await InstallPackageAsync(packageSpec, upgrade: false, indexUrl: null, cancellationToken).ConfigureAwait(false);
+        return await InstallPackageAsync(packageSpec, upgrade: false, indexUrl: null, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -970,34 +1236,19 @@ public abstract class BasePythonRuntime
     /// </summary>
     /// <param name="outputPath">The path where to write the requirements.txt file.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The execution result from pip.</returns>
-    public async Task<PythonExecutionResult> ExportRequirementsAsync(string outputPath, CancellationToken cancellationToken = default)
+    /// <returns>The execution result from uv.</returns>
+    public async Task<PythonExecutionResult> ExportRequirementsAsync(
+        string outputPath,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(outputPath))
             throw new ArgumentException("Output path cannot be null or empty.", nameof(outputPath));
 
-        ValidateInstallation();
-
-        this.Logger?.LogInformation("Exporting requirements to: {Path}", outputPath);
-
-        var result = await ExecuteProcessAsync(
-            ["-m", "pip", "freeze"],
-            null, null, null,
-            cancellationToken, null, null).ConfigureAwait(false);
-
-        if (result.ExitCode != 0)
-        {
-            throw new Exceptions.PackageInstallationException(
-                $"Failed to export requirements. Exit code: {result.ExitCode}")
-            {
-                InstallationOutput = result.StandardOutput + result.StandardError
-            };
-        }
-
-        await File.WriteAllTextAsync(outputPath, result.StandardOutput, cancellationToken).ConfigureAwait(false);
+        var content = await ExportRequirementsFreezeToStringAsync(cancellationToken).ConfigureAwait(false);
+        await File.WriteAllTextAsync(outputPath, content, cancellationToken).ConfigureAwait(false);
 
         this.Logger?.LogInformation("Successfully exported requirements to: {Path}", outputPath);
-        return result;
+        return new PythonExecutionResult(0, content, "");
     }
 
     /// <summary>
@@ -1011,18 +1262,20 @@ public abstract class BasePythonRuntime
     }
 
     /// <summary>
-    /// Exports installed packages as a requirements.txt string (with exact versions from pip freeze).
+    /// Exports installed packages as a requirements.txt string (with exact versions using freeze).
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The requirements.txt content as a string.</returns>
-    public async Task<string> ExportRequirementsFreezeToStringAsync(CancellationToken cancellationToken = default)
+    public async Task<string> ExportRequirementsFreezeToStringAsync(
+        CancellationToken cancellationToken = default)
     {
         ValidateInstallation();
+        ValidateUvAvailable();
 
-        var result = await ExecuteProcessAsync(
-            ["-m", "pip", "freeze"],
-            null, null, null,
-            cancellationToken, null, null).ConfigureAwait(false);
+        this.Logger?.LogDebug("Exporting requirements");
+
+        var uvArgs = new List<string> { "pip", "freeze", "--python", PythonExecutablePath };
+        var result = await ExecuteUvAsync(uvArgs, cancellationToken).ConfigureAwait(false);
 
         if (result.ExitCode != 0)
         {
@@ -1047,12 +1300,14 @@ public abstract class BasePythonRuntime
     }
 
     /// <summary>
-    /// Exports installed packages to a requirements.txt file (with exact versions from pip freeze).
+    /// Exports installed packages to a requirements.txt file (with exact versions from freeze).
     /// </summary>
     /// <param name="outputPath">The path where to write the requirements.txt file.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The execution result from pip.</returns>
-    public async Task<PythonExecutionResult> ExportRequirementsFreezeAsync(string outputPath, CancellationToken cancellationToken = default)
+    /// <returns>The execution result from uv.</returns>
+    public async Task<PythonExecutionResult> ExportRequirementsFreezeAsync(
+        string outputPath,
+        CancellationToken cancellationToken = default)
     {
         var content = await ExportRequirementsFreezeToStringAsync(cancellationToken).ConfigureAwait(false);
         await File.WriteAllTextAsync(outputPath, content, cancellationToken).ConfigureAwait(false);
@@ -1102,7 +1357,7 @@ public abstract class BasePythonRuntime
             {
                 try
                 {
-                    var result = await InstallPackageAsync(pkg, upgrade, indexUrl: null, cancellationToken).ConfigureAwait(false);
+                    var result = await InstallPackageAsync(pkg, upgrade, indexUrl: null, cancellationToken: cancellationToken).ConfigureAwait(false);
                     return (Package: pkg, Result: result);
                 }
                 catch (Exception ex)
@@ -1124,7 +1379,7 @@ public abstract class BasePythonRuntime
             {
                 try
                 {
-                    results[pkg] = await InstallPackageAsync(pkg, upgrade, indexUrl: null, cancellationToken).ConfigureAwait(false);
+                    results[pkg] = await InstallPackageAsync(pkg, upgrade, indexUrl: null, cancellationToken: cancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -1152,13 +1407,11 @@ public abstract class BasePythonRuntime
     /// </summary>
     /// <param name="packages">The list of package names to uninstall.</param>
     /// <param name="parallel">Whether to uninstall packages in parallel.</param>
-    /// <param name="removeDependencies">Whether to remove dependencies.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A dictionary mapping package names to their uninstallation results.</returns>
     public async Task<Dictionary<string, PythonExecutionResult>> UninstallPackagesAsync(
         IEnumerable<string> packages,
         bool parallel = false,
-        bool removeDependencies = false,
         CancellationToken cancellationToken = default)
     {
         if (packages == null)
@@ -1180,7 +1433,7 @@ public abstract class BasePythonRuntime
             {
                 try
                 {
-                    var result = await UninstallPackageAsync(pkg, removeDependencies, cancellationToken).ConfigureAwait(false);
+                    var result = await UninstallPackageAsync(pkg, cancellationToken).ConfigureAwait(false);
                     return (pkg, result);
                 }
                 catch (Exception ex)
@@ -1202,7 +1455,7 @@ public abstract class BasePythonRuntime
             {
                 try
                 {
-                    results[pkg] = await UninstallPackageAsync(pkg, removeDependencies, cancellationToken).ConfigureAwait(false);
+                    results[pkg] = await UninstallPackageAsync(pkg, cancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -1218,9 +1471,9 @@ public abstract class BasePythonRuntime
     /// <summary>
     /// Uninstalls multiple packages in batch (synchronous version).
     /// </summary>
-    public Dictionary<string, PythonExecutionResult> UninstallPackages(IEnumerable<string> packages, bool parallel = false, bool removeDependencies = false)
+    public Dictionary<string, PythonExecutionResult> UninstallPackages(IEnumerable<string> packages, bool parallel = false)
     {
-        Task<Dictionary<string, PythonExecutionResult>> task = UninstallPackagesAsync(packages, parallel, removeDependencies);
+        Task<Dictionary<string, PythonExecutionResult>> task = UninstallPackagesAsync(packages, parallel);
         task.Wait();
         return task.Result;
     }
@@ -1682,7 +1935,8 @@ public abstract class BasePythonRuntime
             FileName = PythonExecutablePath,
             WorkingDirectory = workingDirectory ?? WorkingDirectory,
             UseShellExecute = false,
-            RedirectStandardInput = stdinHandler is not null,
+            // Always redirect stdin to prevent blocking on TTY when parent process has terminal attached
+            RedirectStandardInput = true,
             // Always redirect output/error to capture for result, even if no handlers provided
             RedirectStandardOutput = true,
             RedirectStandardError = true,

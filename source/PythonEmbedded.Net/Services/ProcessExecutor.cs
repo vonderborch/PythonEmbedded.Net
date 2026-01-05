@@ -61,6 +61,38 @@ public class ProcessExecutor : IProcessExecutor
 
         process.Start();
 
+        // Handle stdin: if redirected, either use the handler or close immediately to prevent blocking
+        if (startInfo.RedirectStandardInput)
+        {
+            if (stdinHandler != null)
+            {
+                // Use the provided handler to write to stdin
+                await Task.Run(async () =>
+                {
+                    try
+                    {
+                        using var writer = process.StandardInput;
+                        string? input;
+                        while ((input = stdinHandler()) != null && !cancellationToken.IsCancellationRequested)
+                        {
+                            await writer.WriteLineAsync(input).ConfigureAwait(false);
+                        }
+                        writer.Close();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogWarning(ex, "Error writing to stdin");
+                    }
+                }, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                // Close stdin immediately to prevent the child process from blocking on read()
+                // This is critical when the parent process has stdin connected to a TTY
+                process.StandardInput.Close();
+            }
+        }
+
         // Begin asynchronous read operations
         if (startInfo.RedirectStandardOutput)
         {
@@ -70,28 +102,6 @@ public class ProcessExecutor : IProcessExecutor
         if (startInfo.RedirectStandardError)
         {
             process.BeginErrorReadLine();
-        }
-
-        // Handle stdin if provided
-        if (stdinHandler != null && startInfo.RedirectStandardInput)
-        {
-            await Task.Run(async () =>
-            {
-                try
-                {
-                    using var writer = process.StandardInput;
-                    string? input;
-                    while ((input = stdinHandler()) != null && !cancellationToken.IsCancellationRequested)
-                    {
-                        await writer.WriteLineAsync(input).ConfigureAwait(false);
-                    }
-                    writer.Close();
-                }
-                catch (Exception ex)
-                {
-                    _logger?.LogWarning(ex, "Error writing to stdin");
-                }
-            }, cancellationToken).ConfigureAwait(false);
         }
 
         // Register cancellation handler

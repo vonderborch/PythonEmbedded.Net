@@ -296,9 +296,12 @@ catch (PackageInstallationException ex)
     // Check installation output
     Console.WriteLine($"Installation output: {ex.InstallationOutput}");
     
-    // Check if package exists
-    var searchResult = await runtime.ExecuteCommandAsync(
-        $"-m pip search {ex.PackageSpecification}");
+    // Check if package exists on PyPI
+    var packageInfo = await runtime.GetPackageMetadataAsync(ex.PackageSpecification);
+    if (packageInfo == null)
+    {
+        Console.WriteLine("Package not found on PyPI");
+    }
     
     // Try with upgrade flag
     await runtime.InstallPackageAsync(ex.PackageSpecification, upgrade: true);
@@ -529,13 +532,17 @@ var manager = new PythonManager(
 var result = await runtime.ExecuteCommandAsync("--version");
 Console.WriteLine($"Python version: {result.StandardOutput}");
 
-// Check pip
-var pipResult = await runtime.ExecuteCommandAsync("-m pip --version");
-Console.WriteLine($"Pip: {pipResult.StandardOutput}");
+// Check uv availability
+Console.WriteLine($"uv available: {runtime.IsUvAvailable}");
+Console.WriteLine($"uv path: {runtime.UvExecutablePath}");
 
-// List installed packages
-var packagesResult = await runtime.ExecuteCommandAsync("-m pip list");
-Console.WriteLine($"Installed packages:\n{packagesResult.StandardOutput}");
+// List installed packages (uses uv)
+var packages = await runtime.ListInstalledPackagesAsync();
+Console.WriteLine("Installed packages:");
+foreach (var pkg in packages)
+{
+    Console.WriteLine($"  {pkg.Name}: {pkg.Version}");
+}
 ```
 
 ### Check Metadata

@@ -13,11 +13,16 @@ This document provides detailed API reference for PythonEmbedded.Net.
   - [PythonNetManager](#pythonnetmanager)
   - [PythonExecutionResult](#pythonexecutionresult)
   - [InstanceMetadata](#instancemetadata)
+  - [VirtualEnvironmentMetadata](#virtualenvironmentmetadata)
   - [ManagerConfiguration](#managerconfiguration)
 - [Models](#models)
   - [PackageInfo](#packageinfo)
   - [PyPIPackageInfo](#pypipackageinfo)
 - [Exceptions](#exceptions)
+
+## Package Manager
+
+PythonEmbedded.Net uses [uv](https://github.com/astral-sh/uv) as its package manager, which provides significantly faster package operations compared to pip. `uv` is automatically installed when runtime instances and virtual environments are created.
 
 ## Abstract Classes
 
@@ -46,7 +51,7 @@ Task<BasePythonRuntime> GetOrCreateInstanceAsync(
     CancellationToken cancellationToken = default)
 ```
 
-Gets or creates a Python runtime instance for the specified version. Downloads and installs the Python distribution if it doesn't exist. If `pythonVersion` is null, uses the default version from configuration.
+Gets or creates a Python runtime instance for the specified version. Downloads and installs the Python distribution if it doesn't exist. If `pythonVersion` is null, uses the default version from configuration. Automatically installs `uv` for the new instance.
 
 **Parameters:**
 - `pythonVersion`: The Python version (e.g., "3.12.0", "3.11", "3.10"). Supports partial versions - if only major.minor is specified (e.g., "3.10"), finds the latest patch version (e.g., "3.10.19"). If null, uses `Configuration.DefaultPythonVersion`.
@@ -225,7 +230,43 @@ Imports a Python instance from an archive file.
 
 ### BasePythonRuntime
 
-Abstract base class for Python runtime implementations, providing functionality for executing commands, scripts, and managing packages.
+Abstract base class for Python runtime implementations, providing functionality for executing commands, scripts, and managing packages using [uv](https://github.com/astral-sh/uv).
+
+#### uv Properties
+
+##### IsUvAvailable
+
+```csharp
+bool IsUvAvailable { get; }
+```
+
+Gets whether `uv` is available and ready to use.
+
+##### UvExecutablePath
+
+```csharp
+string? UvExecutablePath { get; }
+```
+
+Gets the path to the `uv` executable, or null if not available.
+
+#### uv Methods
+
+##### DetectUvAsync
+
+```csharp
+Task DetectUvAsync(CancellationToken cancellationToken = default)
+```
+
+Detects if `uv` is available (checks both PATH and local installation).
+
+##### EnsureUvInstalledAsync
+
+```csharp
+Task EnsureUvInstalledAsync(CancellationToken cancellationToken = default)
+```
+
+Ensures `uv` is installed, installing it if necessary. This is called automatically when runtime instances are created.
 
 #### Methods
 
@@ -290,7 +331,7 @@ Task<PythonExecutionResult> InstallPackageAsync(
     CancellationToken cancellationToken = default)
 ```
 
-Installs a Python package using pip.
+Installs a Python package using `uv`.
 
 **Parameters:**
 - `packageSpecification`: The package specification (e.g., "numpy", "torch==2.0.0", "numpy>=1.20.0").
@@ -298,7 +339,7 @@ Installs a Python package using pip.
 - `indexUrl`: Optional custom PyPI index URL to use for this installation.
 - `cancellationToken`: Cancellation token.
 
-**Returns:** The execution result from pip.
+**Returns:** The execution result from uv.
 
 ##### InstallRequirementsAsync
 
@@ -309,14 +350,14 @@ Task<PythonExecutionResult> InstallRequirementsAsync(
     CancellationToken cancellationToken = default)
 ```
 
-Installs Python packages from a requirements.txt file.
+Installs Python packages from a requirements.txt file using `uv`.
 
 **Parameters:**
 - `requirementsFilePath`: The path to the requirements.txt file.
 - `upgrade`: Whether to upgrade packages if they're already installed.
 - `cancellationToken`: Cancellation token.
 
-**Returns:** The execution result from pip.
+**Returns:** The execution result from uv.
 
 ##### InstallPyProjectAsync
 
@@ -327,14 +368,14 @@ Task<PythonExecutionResult> InstallPyProjectAsync(
     CancellationToken cancellationToken = default)
 ```
 
-Installs a Python package from a pyproject.toml file (using pip install).
+Installs a Python package from a pyproject.toml file using `uv`.
 
 **Parameters:**
 - `pyProjectFilePath`: The path to the directory containing pyproject.toml or the pyproject.toml file itself.
-- `editable`: Whether to install in editable mode (pip install -e).
+- `editable`: Whether to install in editable mode.
 - `cancellationToken`: Cancellation token.
 
-**Returns:** The execution result from pip.
+**Returns:** The execution result from uv.
 
 ##### ListInstalledPackagesAsync
 
@@ -342,7 +383,7 @@ Installs a Python package from a pyproject.toml file (using pip install).
 Task<IReadOnlyList<PackageInfo>> ListInstalledPackagesAsync(CancellationToken cancellationToken = default)
 ```
 
-Lists all installed packages.
+Lists all installed packages using `uv pip list`.
 
 ##### GetPackageVersionAsync
 
@@ -350,7 +391,7 @@ Lists all installed packages.
 Task<string?> GetPackageVersionAsync(string packageName, CancellationToken cancellationToken = default)
 ```
 
-Gets the version of a specific package.
+Gets the version of a specific package using `importlib.metadata`.
 
 ##### IsPackageInstalledAsync
 
@@ -358,7 +399,7 @@ Gets the version of a specific package.
 Task<bool> IsPackageInstalledAsync(string packageName, CancellationToken cancellationToken = default)
 ```
 
-Checks if a package is installed.
+Checks if a package is installed using `uv pip show`.
 
 ##### GetPackageInfoAsync
 
@@ -366,7 +407,7 @@ Checks if a package is installed.
 Task<PackageInfo?> GetPackageInfoAsync(string packageName, CancellationToken cancellationToken = default)
 ```
 
-Gets detailed information about an installed package.
+Gets detailed information about an installed package using `importlib.metadata`.
 
 ##### UninstallPackageAsync
 
@@ -377,7 +418,7 @@ Task<PythonExecutionResult> UninstallPackageAsync(
     CancellationToken cancellationToken = default)
 ```
 
-Uninstalls a Python package.
+Uninstalls a Python package using `uv`.
 
 ##### UpgradeAllPackagesAsync
 
@@ -393,7 +434,7 @@ Upgrades all installed packages.
 Task<IReadOnlyList<OutdatedPackageInfo>> ListOutdatedPackagesAsync(CancellationToken cancellationToken = default)
 ```
 
-Lists packages that have available updates.
+Lists packages that have available updates using `uv pip list --outdated`.
 
 **Returns:** A list of outdated packages with their current and latest versions.
 
@@ -414,13 +455,13 @@ Downgrades a package to a specific version.
 Task<PythonExecutionResult> ExportRequirementsAsync(string outputPath, CancellationToken cancellationToken = default)
 ```
 
-Exports installed packages to a requirements.txt file (with version constraints).
+Exports installed packages to a requirements.txt file using `uv pip freeze`.
 
 **Parameters:**
 - `outputPath`: The path where to write the requirements.txt file.
 - `cancellationToken`: Cancellation token.
 
-**Returns:** The execution result from pip.
+**Returns:** The execution result from uv.
 
 ##### ExportRequirementsFreezeAsync
 
@@ -428,13 +469,13 @@ Exports installed packages to a requirements.txt file (with version constraints)
 Task<PythonExecutionResult> ExportRequirementsFreezeAsync(string outputPath, CancellationToken cancellationToken = default)
 ```
 
-Exports installed packages to a requirements.txt file with exact versions (pip freeze).
+Exports installed packages to a requirements.txt file with exact versions using `uv pip freeze`.
 
 **Parameters:**
 - `outputPath`: The path where to write the requirements.txt file.
 - `cancellationToken`: Cancellation token.
 
-**Returns:** The execution result from pip.
+**Returns:** The execution result from uv.
 
 ##### ExportRequirementsFreezeToStringAsync
 
@@ -442,7 +483,7 @@ Exports installed packages to a requirements.txt file with exact versions (pip f
 Task<string> ExportRequirementsFreezeToStringAsync(CancellationToken cancellationToken = default)
 ```
 
-Exports installed packages as a requirements.txt string (with exact versions from pip freeze).
+Exports installed packages as a requirements.txt string using `uv pip freeze`.
 
 **Returns:** The requirements.txt content as a string.
 
@@ -486,14 +527,6 @@ Uninstalls multiple packages in batch.
 
 **Returns:** A dictionary mapping package names to their uninstallation results.
 
-##### GetPipVersionAsync
-
-```csharp
-Task<string> GetPipVersionAsync(CancellationToken cancellationToken = default)
-```
-
-Gets the pip version.
-
 ##### GetPythonVersionInfoAsync
 
 ```csharp
@@ -530,49 +563,21 @@ Gets package metadata from PyPI.
 
 **Returns:** Package metadata, or null if not found.
 
-##### GetPipConfigurationAsync
+##### ValidatePythonInstallationAsync
 
 ```csharp
-Task<PipConfiguration> GetPipConfigurationAsync(CancellationToken cancellationToken = default)
+Task<Dictionary<string, object>> ValidatePythonInstallationAsync(CancellationToken cancellationToken = default)
 ```
 
-Gets the current pip configuration.
+Performs a comprehensive health check of the Python installation.
 
-**Returns:** Pip configuration information including index URL, trusted host, and proxy settings.
-
-##### ConfigurePipIndexAsync
-
-```csharp
-Task<PythonExecutionResult> ConfigurePipIndexAsync(
-    string indexUrl,
-    bool trusted = false,
-    CancellationToken cancellationToken = default)
-```
-
-Configures pip to use a custom index URL.
-
-**Parameters:**
-- `indexUrl`: The index URL to use.
-- `trusted`: Whether to mark the host as trusted.
-- `cancellationToken`: Cancellation token.
-
-**Returns:** The execution result from pip.
-
-##### ConfigurePipProxyAsync
-
-```csharp
-Task<PythonExecutionResult> ConfigurePipProxyAsync(
-    string proxyUrl,
-    CancellationToken cancellationToken = default)
-```
-
-Configures pip proxy settings.
-
-**Parameters:**
-- `proxyUrl`: The proxy URL to use.
-- `cancellationToken`: Cancellation token.
-
-**Returns:** The execution result from pip.
+**Returns:** A dictionary containing health check results including:
+- `ExecutableExists`: Whether the Python executable exists
+- `WorkingDirectoryExists`: Whether the working directory exists
+- `PythonVersionCheck`: Status of Python version check
+- `UvCheck`: Status of uv availability
+- `CommandExecution`: Status of command execution test
+- `OverallHealth`: Overall health status ("Healthy" or "Unhealthy")
 
 ##### ValidatePythonVersionString
 
@@ -600,22 +605,6 @@ Validates that a package specification is in a valid format.
 
 **Returns:** True if the package specification is valid, false otherwise.
 
-##### ValidatePythonInstallationAsync
-
-```csharp
-Task<Dictionary<string, object>> ValidatePythonInstallationAsync(CancellationToken cancellationToken = default)
-```
-
-Performs a comprehensive health check of the Python installation.
-
-**Returns:** A dictionary containing health check results including:
-- `ExecutableExists`: Whether the Python executable exists
-- `WorkingDirectoryExists`: Whether the working directory exists
-- `PythonVersionCheck`: Status of Python version check
-- `PipCheck`: Status of pip check
-- `CommandExecution`: Status of command execution test
-- `OverallHealth`: Overall health status ("Healthy" or "Unhealthy")
-
 ---
 
 ### BasePythonRootRuntime
@@ -630,18 +619,43 @@ Abstract base class for Python root runtime implementations that can manage virt
 Task<BasePythonVirtualRuntime> GetOrCreateVirtualEnvironmentAsync(
     string name,
     bool recreateIfExists = false,
+    string? externalPath = null,
     CancellationToken cancellationToken = default)
 ```
 
-Gets or creates a virtual environment with the specified name.
+Gets or creates a virtual environment with the specified name using `uv`. Virtual environments can be created at an external path outside the default location.
+
+**Parameters:**
+- `name`: The name of the virtual environment.
+- `recreateIfExists`: Whether to recreate the virtual environment if it already exists.
+- `externalPath`: Optional external path where the venv should be created. If null, uses default location.
+- `cancellationToken`: Cancellation token.
+
+**Returns:** The virtual environment runtime.
+
+**Exceptions:**
+- `InvalidOperationException`: If a venv with the same name already exists and `recreateIfExists` is false.
 
 ##### DeleteVirtualEnvironmentAsync
 
 ```csharp
-Task<bool> DeleteVirtualEnvironmentAsync(string name, CancellationToken cancellationToken = default)
+Task<bool> DeleteVirtualEnvironmentAsync(
+    string name,
+    CancellationToken cancellationToken = default,
+    bool deleteExternalFiles = true)
 ```
 
 Deletes a virtual environment with the specified name.
+
+**Parameters:**
+- `name`: The name of the virtual environment to delete.
+- `cancellationToken`: Cancellation token.
+- `deleteExternalFiles`: For external venvs, whether to delete the actual files (default true). If false, only removes the metadata tracking.
+
+**Returns:** `true` if deleted, `false` if not found.
+
+**Exceptions:**
+- `VirtualEnvironmentNotFoundException`: When deletion fails.
 
 ##### ListVirtualEnvironments
 
@@ -650,6 +664,45 @@ IReadOnlyList<string> ListVirtualEnvironments()
 ```
 
 Lists all virtual environments.
+
+##### VirtualEnvironmentExists
+
+```csharp
+bool VirtualEnvironmentExists(string name)
+```
+
+Checks if a virtual environment with the specified name exists.
+
+**Parameters:**
+- `name`: The name of the virtual environment.
+
+**Returns:** True if the venv exists (standard or external), false otherwise.
+
+##### ResolveVirtualEnvironmentPath
+
+```csharp
+string ResolveVirtualEnvironmentPath(string name)
+```
+
+Resolves the actual path to a virtual environment from its name. Checks metadata for external paths.
+
+**Parameters:**
+- `name`: The name of the virtual environment.
+
+**Returns:** The actual path to the virtual environment.
+
+##### GetVirtualEnvironmentMetadata
+
+```csharp
+VirtualEnvironmentMetadata? GetVirtualEnvironmentMetadata(string name)
+```
+
+Gets the metadata for a virtual environment.
+
+**Parameters:**
+- `name`: The name of the virtual environment.
+
+**Returns:** The metadata if found, null otherwise.
 
 ##### GetVirtualEnvironmentSize
 
@@ -675,7 +728,7 @@ Gets detailed information about a virtual environment.
 **Parameters:**
 - `name`: The name of the virtual environment.
 
-**Returns:** A dictionary containing information about the virtual environment.
+**Returns:** A dictionary containing information about the virtual environment including `Name`, `Path`, `SizeBytes`, `Exists`, `Created`, `Modified`, `IsExternal`, `ExternalPath`, and `PythonVersion`.
 
 ##### CloneVirtualEnvironmentAsync
 
@@ -783,6 +836,36 @@ Configuration settings for the Python manager.
 - `RetryDelay` (TimeSpan): Delay between retry attempts. Defaults to 1 second.
 - `UseExponentialBackoff` (bool): Whether to use exponential backoff for retry delays. Defaults to true.
 
+### InstanceMetadata
+
+Represents metadata associated with a Python runtime instance.
+
+**Properties:**
+- `PythonVersion` (string): The version of Python
+- `BuildDate` (DateTime): The date indicating when the build was created
+- `WasLatestBuild` (bool): Whether the build was the latest at installation time
+- `InstallationDate` (DateTime): The date and time when the installation was completed
+- `VirtualEnvironments` (List\<VirtualEnvironmentMetadata\>): Collection of virtual environments managed by this instance
+- `Directory` (string): The directory path associated with the Python runtime instance (read-only)
+
+**Methods:**
+- `GetVirtualEnvironment(string name)`: Gets virtual environment metadata by name
+- `SetVirtualEnvironment(VirtualEnvironmentMetadata metadata)`: Adds or updates virtual environment metadata
+- `RemoveVirtualEnvironment(string name)`: Removes virtual environment metadata
+
+### VirtualEnvironmentMetadata
+
+Represents metadata associated with a Python virtual environment.
+
+**Properties:**
+- `Name` (string): The name of the virtual environment
+- `ExternalPath` (string?): The actual path for external virtual environments (null for default location)
+- `CreatedDate` (DateTime): When the virtual environment was created
+- `IsExternal` (bool): Whether this venv is stored at an external location (computed from ExternalPath)
+
+**Methods:**
+- `GetResolvedPath(string defaultPath)`: Gets the resolved path (ExternalPath if set, otherwise defaultPath)
+
 ### PackageInfo
 
 Represents information about an installed Python package.
@@ -815,7 +898,7 @@ Represents package metadata from PyPI.
 - `AuthorEmail` (string?): Author email
 - `HomePage` (string?): Package homepage URL
 - `License` (string?): Package license
-- `RequiresPython` (IReadOnlyList<string>?): Python version requirements
+- `RequiresPython` (IReadOnlyList\<string\>?): Python version requirements
 
 ### PyPISearchResult
 
@@ -825,26 +908,6 @@ Represents a simplified search result from PyPI.
 - `Name` (string): Package name
 - `Version` (string): Package version
 - `Summary` (string?): Package summary
-
-### PipConfiguration
-
-Represents pip configuration information.
-
-**Properties:**
-- `IndexUrl` (string?): PyPI index URL
-- `TrustedHost` (string?): Trusted host
-- `Proxy` (string?): Proxy URL
-
-### InstanceMetadata
-
-Represents metadata associated with a Python runtime instance.
-
-**Properties:**
-- `PythonVersion` (string): The version of Python
-- `BuildDate` (DateTime): The date indicating when the build was created
-- `WasLatestBuild` (bool): Whether the build was the latest at installation time
-- `InstallationDate` (DateTime): The date and time when the installation was completed
-- `Directory` (string): The directory path associated with the Python runtime instance (read-only)
 
 ---
 

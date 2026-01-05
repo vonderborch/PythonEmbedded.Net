@@ -176,6 +176,7 @@ public class PlatformInfo
                     Arguments = "--version",
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
+                    RedirectStandardInput = true,  // Prevent stdin blocking on TTY
                     UseShellExecute = false,
                     CreateNoWindow = true
                 };
@@ -183,6 +184,9 @@ public class PlatformInfo
                 using var process = System.Diagnostics.Process.Start(processInfo);
                 if (process != null)
                 {
+                    // Close stdin immediately to prevent blocking
+                    process.StandardInput.Close();
+                    
                     var output = process.StandardOutput.ReadToEnd();
                     process.WaitForExit();
 

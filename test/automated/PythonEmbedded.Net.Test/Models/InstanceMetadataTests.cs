@@ -161,4 +161,181 @@ public class InstanceMetadataTests
         Assert.That(loaded1!.BuildDate.Date, Is.EqualTo(buildDate1.Date));
         Assert.That(loaded2!.BuildDate.Date, Is.EqualTo(buildDate2.Date));
     }
+
+    [Test]
+    public void VirtualEnvironments_WhenNew_IsEmptyList()
+    {
+        // Arrange
+        var metadata = new InstanceMetadata();
+
+        // Assert
+        Assert.That(metadata.VirtualEnvironments, Is.Not.Null);
+        Assert.That(metadata.VirtualEnvironments, Is.Empty);
+    }
+
+    [Test]
+    public void GetVirtualEnvironment_WithNonExistentName_ReturnsNull()
+    {
+        // Arrange
+        var metadata = new InstanceMetadata();
+
+        // Act
+        var venv = metadata.GetVirtualEnvironment("nonexistent");
+
+        // Assert
+        Assert.That(venv, Is.Null);
+    }
+
+    [Test]
+    public void SetVirtualEnvironment_AddsNewVirtualEnvironment()
+    {
+        // Arrange
+        var metadata = new InstanceMetadata();
+        var venvMetadata = new VirtualEnvironmentMetadata
+        {
+            Name = "test_venv",
+            CreatedDate = DateTime.UtcNow
+        };
+
+        // Act
+        metadata.SetVirtualEnvironment(venvMetadata);
+
+        // Assert
+        Assert.That(metadata.VirtualEnvironments, Has.Count.EqualTo(1));
+        Assert.That(metadata.GetVirtualEnvironment("test_venv"), Is.Not.Null);
+        Assert.That(metadata.GetVirtualEnvironment("test_venv")!.Name, Is.EqualTo("test_venv"));
+    }
+
+    [Test]
+    public void SetVirtualEnvironment_UpdatesExistingVirtualEnvironment()
+    {
+        // Arrange
+        var metadata = new InstanceMetadata();
+        var venvMetadata1 = new VirtualEnvironmentMetadata
+        {
+            Name = "test_venv",
+            ExternalPath = null
+        };
+        metadata.SetVirtualEnvironment(venvMetadata1);
+
+        var venvMetadata2 = new VirtualEnvironmentMetadata
+        {
+            Name = "test_venv",
+            ExternalPath = "/new/path"
+        };
+
+        // Act
+        metadata.SetVirtualEnvironment(venvMetadata2);
+
+        // Assert
+        Assert.That(metadata.VirtualEnvironments, Has.Count.EqualTo(1));
+        Assert.That(metadata.GetVirtualEnvironment("test_venv")!.ExternalPath, Is.EqualTo("/new/path"));
+    }
+
+    [Test]
+    public void GetVirtualEnvironment_IsCaseInsensitive()
+    {
+        // Arrange
+        var metadata = new InstanceMetadata();
+        var venvMetadata = new VirtualEnvironmentMetadata
+        {
+            Name = "Test_Venv"
+        };
+        metadata.SetVirtualEnvironment(venvMetadata);
+
+        // Act & Assert
+        Assert.That(metadata.GetVirtualEnvironment("test_venv"), Is.Not.Null);
+        Assert.That(metadata.GetVirtualEnvironment("TEST_VENV"), Is.Not.Null);
+        Assert.That(metadata.GetVirtualEnvironment("Test_Venv"), Is.Not.Null);
+    }
+
+    [Test]
+    public void RemoveVirtualEnvironment_WithExistingName_RemovesAndReturnsTrue()
+    {
+        // Arrange
+        var metadata = new InstanceMetadata();
+        var venvMetadata = new VirtualEnvironmentMetadata
+        {
+            Name = "test_venv"
+        };
+        metadata.SetVirtualEnvironment(venvMetadata);
+
+        // Act
+        var result = metadata.RemoveVirtualEnvironment("test_venv");
+
+        // Assert
+        Assert.That(result, Is.True);
+        Assert.That(metadata.VirtualEnvironments, Is.Empty);
+        Assert.That(metadata.GetVirtualEnvironment("test_venv"), Is.Null);
+    }
+
+    [Test]
+    public void RemoveVirtualEnvironment_WithNonExistentName_ReturnsFalse()
+    {
+        // Arrange
+        var metadata = new InstanceMetadata();
+
+        // Act
+        var result = metadata.RemoveVirtualEnvironment("nonexistent");
+
+        // Assert
+        Assert.That(result, Is.False);
+    }
+
+    [Test]
+    public void Save_AndLoad_WithVirtualEnvironments_PreservesVirtualEnvironments()
+    {
+        // Arrange
+        var metadata = new InstanceMetadata
+        {
+            PythonVersion = "3.12.0",
+            BuildDate = new DateTime(2024, 1, 15)
+        };
+        metadata.SetVirtualEnvironment(new VirtualEnvironmentMetadata
+        {
+            Name = "venv1",
+            CreatedDate = DateTime.UtcNow
+        });
+        metadata.SetVirtualEnvironment(new VirtualEnvironmentMetadata
+        {
+            Name = "venv2",
+            ExternalPath = "/external/path/venv2",
+            CreatedDate = DateTime.UtcNow
+        });
+        metadata.Save(_testDirectory);
+
+        // Act
+        var loaded = InstanceMetadata.Load(_testDirectory);
+
+        // Assert
+        Assert.That(loaded, Is.Not.Null);
+        Assert.That(loaded!.VirtualEnvironments, Has.Count.EqualTo(2));
+        
+        var venv1 = loaded.GetVirtualEnvironment("venv1");
+        Assert.That(venv1, Is.Not.Null);
+        Assert.That(venv1!.IsExternal, Is.False);
+        
+        var venv2 = loaded.GetVirtualEnvironment("venv2");
+        Assert.That(venv2, Is.Not.Null);
+        Assert.That(venv2!.IsExternal, Is.True);
+        Assert.That(venv2.ExternalPath, Is.EqualTo("/external/path/venv2"));
+    }
+
+    [Test]
+    public void SetVirtualEnvironment_WithMultipleVenvs_MaintainsAll()
+    {
+        // Arrange
+        var metadata = new InstanceMetadata();
+
+        // Act
+        metadata.SetVirtualEnvironment(new VirtualEnvironmentMetadata { Name = "venv1" });
+        metadata.SetVirtualEnvironment(new VirtualEnvironmentMetadata { Name = "venv2" });
+        metadata.SetVirtualEnvironment(new VirtualEnvironmentMetadata { Name = "venv3" });
+
+        // Assert
+        Assert.That(metadata.VirtualEnvironments, Has.Count.EqualTo(3));
+        Assert.That(metadata.GetVirtualEnvironment("venv1"), Is.Not.Null);
+        Assert.That(metadata.GetVirtualEnvironment("venv2"), Is.Not.Null);
+        Assert.That(metadata.GetVirtualEnvironment("venv3"), Is.Not.Null);
+    }
 }

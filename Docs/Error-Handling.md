@@ -473,9 +473,12 @@ if (result.ExitCode != 0)
 {
     Console.WriteLine($"Installation failed: {result.StandardError}");
     
-    // Check if package exists
-    var searchResult = await runtime.ExecuteCommandAsync(
-        $"-m pip search {packageName}");
+    // Check if package exists on PyPI
+    var packageInfo = await runtime.GetPackageMetadataAsync("package-name");
+    if (packageInfo == null)
+    {
+        Console.WriteLine("Package not found on PyPI");
+    }
 }
 ```
 

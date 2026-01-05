@@ -61,6 +61,11 @@ public class PythonNetRootRuntime : BasePythonRootRuntime, IDisposable
     protected override string VirtualEnvironmentsDirectory => Path.Combine(_instanceMetadata.Directory, "venvs");
 
     /// <summary>
+    /// Gets the instance metadata for this root runtime.
+    /// </summary>
+    protected override InstanceMetadata InstanceMetadata => _instanceMetadata;
+
+    /// <summary>
     /// Validates that the Python installation is complete and valid.
     /// </summary>
     protected override void ValidateInstallation()

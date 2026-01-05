@@ -224,11 +224,13 @@ public abstract class BasePythonManager
                                 Arguments = "--version",
                                 RedirectStandardOutput = true,
                                 RedirectStandardError = true,
+                                RedirectStandardInput = true,  // Prevent stdin blocking on TTY
                                 UseShellExecute = false,
                                 CreateNoWindow = true
                             }
                         };
                         testProcess.Start();
+                        testProcess.StandardInput.Close();  // Close stdin immediately to prevent blocking
                         testProcess.WaitForExit(5000); // 5 second timeout
                         
                         if (testProcess.ExitCode == 0)
@@ -293,6 +295,10 @@ public abstract class BasePythonManager
         
         // use the instance 
         BasePythonRuntime runtime = GetPythonRuntimeForInstance(instance!);
+        
+        // Ensure uv is installed on the runtime
+        await runtime.EnsureUvInstalledAsync(cancellationToken).ConfigureAwait(false);
+        
         return runtime;
     }
     

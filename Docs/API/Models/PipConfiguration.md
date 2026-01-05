@@ -1,6 +1,6 @@
 # PipConfiguration
 
-Represents pip configuration information for package installation operations.
+Represents pip configuration information. Note: This library uses [uv](https://github.com/astral-sh/uv) for package operations, but this record is used to read existing pip configuration settings.
 
 ## Namespace
 
@@ -43,24 +43,25 @@ Gets the proxy URL for pip operations.
 
 ## Usage
 
-PipConfiguration is used when installing packages to configure pip behavior.
+PipConfiguration is returned by `GetPipConfigurationAsync` to read existing pip configuration.
 
 **Example:**
 
 ```csharp
-var pipConfig = new PipConfiguration(
-    IndexUrl: "https://pypi.org/simple",
-    TrustedHost: "pypi.org",
-    Proxy: "http://proxy.example.com:8080"
-);
+// Read existing pip configuration
+var pipConfig = await runtime.GetPipConfigurationAsync();
+Console.WriteLine($"Index URL: {pipConfig.IndexUrl}");
+Console.WriteLine($"Proxy: {pipConfig.Proxy}");
+```
 
-await runtime.InstallPackageAsync("requests", pipConfig: pipConfig);
+## Note
+
+Package installation is handled by `uv`, not pip. The `InstallPackageAsync` method accepts an optional `indexUrl` parameter directly:
+
+```csharp
+await runtime.InstallPackageAsync("requests", indexUrl: "https://custom-pypi.example.com/simple/");
 ```
 
 ## Related Types
 
-- [BasePythonRuntime](../Runtimes/BasePythonRuntime.md) - Uses PipConfiguration for package installation
-
-
-
-
+- [BasePythonRuntime](../Runtimes/BasePythonRuntime.md) - Provides `GetPipConfigurationAsync` method

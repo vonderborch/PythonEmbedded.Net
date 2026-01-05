@@ -30,10 +30,56 @@ public class InstanceMetadata
     public DateTime InstallationDate { get; set; } = DateTime.Now;
 
     /// <summary>
-    /// Gets the directory path associated with the Python runtime instance.
+    /// Gets or sets the collection of virtual environments managed by this instance.
+    /// </summary>
+    public List<VirtualEnvironmentMetadata> VirtualEnvironments { get; set; } = new();
+
+    /// <summary>
+    /// Gets the directory path where the metadata file is stored.
     /// </summary>
     [JsonIgnore]
     public string Directory { get; internal set; } = string.Empty;
+
+    /// <summary>
+    /// Gets the virtual environment metadata for the specified name.
+    /// </summary>
+    /// <param name="name">The name of the virtual environment.</param>
+    /// <returns>The metadata if found, null otherwise.</returns>
+    public VirtualEnvironmentMetadata? GetVirtualEnvironment(string name)
+    {
+        return VirtualEnvironments.FirstOrDefault(v => 
+            string.Equals(v.Name, name, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Adds or updates a virtual environment metadata entry.
+    /// </summary>
+    /// <param name="venvMetadata">The virtual environment metadata to add or update.</param>
+    public void SetVirtualEnvironment(VirtualEnvironmentMetadata venvMetadata)
+    {
+        var existing = GetVirtualEnvironment(venvMetadata.Name);
+        if (existing != null)
+        {
+            VirtualEnvironments.Remove(existing);
+        }
+        VirtualEnvironments.Add(venvMetadata);
+    }
+
+    /// <summary>
+    /// Removes a virtual environment metadata entry.
+    /// </summary>
+    /// <param name="name">The name of the virtual environment to remove.</param>
+    /// <returns>True if the entry was removed, false if it wasn't found.</returns>
+    public bool RemoveVirtualEnvironment(string name)
+    {
+        var existing = GetVirtualEnvironment(name);
+        if (existing != null)
+        {
+            VirtualEnvironments.Remove(existing);
+            return true;
+        }
+        return false;
+    }
 
     /// <summary>
     /// Checks whether the instance metadata file exists in the specified directory path.
@@ -89,5 +135,3 @@ public class InstanceMetadata
         return path;
     }
 }
-
-

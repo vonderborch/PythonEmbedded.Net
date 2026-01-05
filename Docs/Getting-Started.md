@@ -91,12 +91,17 @@ Console.WriteLine(result.StandardOutput); // "Hello, World!"
 
 ### 5. Install Packages
 
+PythonEmbedded.Net uses [uv](https://github.com/astral-sh/uv) for fast package management. `uv` is automatically installed when you create a runtime instance.
+
 ```csharp
-// Install a package
+// Install a package (uses uv for fast installation)
 await runtime.InstallPackageAsync("numpy");
 
 // Install with version constraint
 await runtime.InstallPackageAsync("requests==2.31.0");
+
+// Upgrade a package
+await runtime.InstallPackageAsync("numpy", upgrade: true);
 ```
 
 ### 6. Work with Virtual Environments

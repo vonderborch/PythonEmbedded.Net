@@ -104,16 +104,19 @@ Central manager that handles:
 Provides common functionality for all runtimes:
 - **Command Execution**: `ExecuteCommandAsync` / `ExecuteCommand`
 - **Script Execution**: `ExecuteScriptAsync` / `ExecuteScript`
-- **Package Installation**: `InstallPackageAsync`, `InstallRequirementsAsync`, `InstallPyProjectAsync`
+- **Package Installation**: `InstallPackageAsync`, `InstallRequirementsAsync`, `InstallPyProjectAsync` (using `uv`)
+- **Package Manager (uv)**: Manages `uv` installation and detection for fast package operations
 
 Delegates actual process execution to `IProcessExecutor` service.
 
 ### BasePythonRootRuntime
 
 Extends `BasePythonRuntime` with virtual environment management:
-- **Virtual Environment Creation**: Uses Python's `venv` module
-- **Virtual Environment Discovery**: Lists and validates virtual environments
+- **Virtual Environment Creation**: Uses `uv` for fast venv creation (significantly faster than `python -m venv`)
+- **External Virtual Environments**: Supports creating venvs at arbitrary paths via `externalPath` parameter
+- **Virtual Environment Discovery**: Lists and validates virtual environments, including those at external paths
 - **Virtual Environment Runtime Creation**: Factory method for creating `IPythonVirtualRuntime` instances
+- **Metadata Management**: Tracks virtual environments in `InstanceMetadata.VirtualEnvironments`
 
 ### Process Executor
 
@@ -136,7 +139,8 @@ GetOrCreateInstanceAsync()
     │   ├── Verify installation (ArchiveHelper)
     │   ├── Find Python install path
     │   └── Save metadata
-    └── Create runtime instance (factory method)
+    ├── Create runtime instance (factory method)
+    └── Ensure uv is installed for package management
 ```
 
 ### Command Execution Flow
@@ -156,12 +160,17 @@ ExecuteCommandAsync()
 ### Virtual Environment Creation Flow
 
 ```
-GetOrCreateVirtualEnvironmentAsync()
+GetOrCreateVirtualEnvironmentAsync(name, recreateIfExists, externalPath)
     ├── Validate installation
-    ├── Check if venv exists
+    ├── Check if venv with name exists (in InstanceMetadata)
+    ├── If exists and recreateIfExists is false:
+    │   └── Throw InvalidOperationException
     ├── If not exists or recreate:
-    │   ├── Execute: python -m venv <path>
-    │   └── Verify creation
+    │   ├── Determine path (external or default)
+    │   ├── Ensure uv is installed
+    │   ├── Execute: uv venv <path>  (faster than python -m venv)
+    │   ├── Add VirtualEnvironmentMetadata to InstanceMetadata
+    │   └── Save InstanceMetadata
     └── Create IPythonVirtualRuntime instance
 ```
 
@@ -171,15 +180,28 @@ GetOrCreateVirtualEnvironmentAsync()
 manager_directory/
 └── python-{version}-{buildDate}/   # Instance directory
     ├── python/                      # Python installation files
-    ├── venvs/                       # Virtual environments
+    ├── venvs/                       # Virtual environments (default location)
     │   └── {venv_name}/
     │       ├── bin/ (or Scripts/)
     │       ├── lib/
     │       └── pyvenv.cfg
-    └── instance_metadata.json       # Instance-specific metadata
+    └── instance_metadata.json       # Instance-specific metadata (includes VirtualEnvironments array)
 ```
 
-**Note**: The `ManagerMetadata` class is an in-memory collection that loads instance metadata from individual `instance_metadata.json` files in each instance directory. There is no central metadata file.
+**Notes**: 
+- The `ManagerMetadata` class is an in-memory collection that loads instance metadata from individual `instance_metadata.json` files in each instance directory. There is no central metadata file.
+- Virtual environments can also be created at external paths. In this case, the venv files are at the external location, but the `VirtualEnvironmentMetadata` is stored in `instance_metadata.json` with the `ExternalPath` property set.
+- Example of `instance_metadata.json` with virtual environments:
+```json
+{
+  "PythonVersion": "3.12.0",
+  "BuildDate": "2024-01-15T00:00:00Z",
+  "VirtualEnvironments": [
+    { "Name": "default_venv", "ExternalPath": null, "CreatedDate": "2024-06-01T10:00:00Z" },
+    { "Name": "project_venv", "ExternalPath": "/path/to/project/.venv", "CreatedDate": "2024-06-02T14:30:00Z" }
+  ]
+}
+```
 
 ## Resource Management
 
@@ -274,6 +296,19 @@ public class CustomRuntime : BasePythonRootRuntime
 }
 ```
 
+## Package Manager (uv)
+
+This library uses [uv](https://github.com/astral-sh/uv) as its package manager instead of pip. Key benefits:
+
+- **Significantly faster** package installation (10-100x faster than pip)
+- **Fast virtual environment creation** using `uv venv`
+- **Drop-in replacement** for pip commands
+- **Automatic installation** when runtime instances are created
+
+`uv` is automatically installed by calling `EnsureUvInstalledAsync()` when:
+1. A new runtime instance is created via `GetOrCreateInstanceAsync()`
+2. A new virtual environment is created via `GetOrCreateVirtualEnvironmentAsync()`
+
 ## Performance Considerations
 
 ### Async/Await
@@ -292,6 +327,12 @@ public class CustomRuntime : BasePythonRootRuntime
 
 - Process executor can be shared across operations
 - Python.NET initialization is singleton-based
+
+### Fast Package Operations (uv)
+
+- Package installation uses `uv` for 10-100x faster performance
+- Virtual environment creation uses `uv venv` instead of `python -m venv`
+- Package queries use `importlib.metadata` for fast local lookups
 
 ## Security Considerations
 

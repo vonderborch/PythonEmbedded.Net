@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 using PythonEmbedded.Net.Exceptions;
 using PythonEmbedded.Net.Helpers;
+using PythonEmbedded.Net.Models;
 
 namespace PythonEmbedded.Net;
 
@@ -16,15 +17,30 @@ public abstract class BasePythonRootRuntime : BasePythonRuntime
     protected abstract string VirtualEnvironmentsDirectory { get; }
 
     /// <summary>
+    /// Gets the instance metadata for this root runtime.
+    /// </summary>
+    protected abstract InstanceMetadata InstanceMetadata { get; }
+
+    /// <summary>
+    /// Saves the instance metadata to disk.
+    /// </summary>
+    protected void SaveInstanceMetadata()
+    {
+        InstanceMetadata.Save(InstanceMetadata.Directory);
+    }
+
+    /// <summary>
     /// Gets or creates a virtual environment with the specified name.
     /// </summary>
     /// <param name="name">The name of the virtual environment.</param>
     /// <param name="recreateIfExists">Whether to recreate the virtual environment if it already exists.</param>
+    /// <param name="externalPath">Optional external path where the venv should be created. If null, uses default location.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The virtual environment runtime.</returns>
     public async Task<BasePythonVirtualRuntime> GetOrCreateVirtualEnvironmentAsync(
         string name,
         bool recreateIfExists = false,
+        string? externalPath = null,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(name))
@@ -32,27 +48,58 @@ public abstract class BasePythonRootRuntime : BasePythonRuntime
 
         ValidateInstallation();
 
-        string venvPath = Path.Combine(VirtualEnvironmentsDirectory, name);
-        bool exists = Directory.Exists(venvPath) && IsValidVirtualEnvironment(venvPath);
+        bool isExternal = !string.IsNullOrWhiteSpace(externalPath);
+        string defaultPath = Path.Combine(VirtualEnvironmentsDirectory, name);
+        
+        // Check if a venv with this name already exists in metadata
+        var existingVenvMetadata = InstanceMetadata.GetVirtualEnvironment(name);
+        bool nameAlreadyExists = existingVenvMetadata != null;
+        
+        string actualVenvPath = isExternal 
+            ? externalPath! 
+            : existingVenvMetadata?.GetResolvedPath(defaultPath) ?? defaultPath;
+        
+        bool venvAtPathExists = Directory.Exists(actualVenvPath) && IsValidVirtualEnvironment(actualVenvPath);
 
-        if (exists && recreateIfExists)
+        if (nameAlreadyExists && recreateIfExists)
         {
             this.Logger?.LogInformation("Recreating virtual environment: {Name}", name);
-            Directory.Delete(venvPath, true);
-            exists = false;
+            await DeleteVirtualEnvironmentAsync(name, cancellationToken).ConfigureAwait(false);
+            nameAlreadyExists = false;
+            venvAtPathExists = false;
+            existingVenvMetadata = null;
         }
 
-        if (!exists)
+        if (!venvAtPathExists)
         {
-            this.Logger?.LogInformation("Creating virtual environment: {Name} at {Path}", name, venvPath);
-            await CreateVirtualEnvironmentAsync(venvPath, cancellationToken);
+            // Check for duplicate name before creating
+            if (nameAlreadyExists)
+            {
+                throw new InvalidOperationException(
+                    $"A virtual environment with name '{name}' already exists. " +
+                    $"Use recreateIfExists=true to replace it, or choose a different name.");
+            }
+
+            this.Logger?.LogInformation("Creating virtual environment: {Name} at {Path}", name, actualVenvPath);
+            await CreateVirtualEnvironmentAsync(actualVenvPath, cancellationToken).ConfigureAwait(false);
+
+            // Create metadata for the venv
+            var venvMetadata = new VirtualEnvironmentMetadata
+            {
+                Name = name,
+                CreatedDate = DateTime.UtcNow,
+                ExternalPath = isExternal ? Path.GetFullPath(externalPath!) : null
+            };
+            
+            InstanceMetadata.SetVirtualEnvironment(venvMetadata);
+            SaveInstanceMetadata();
         }
         else
         {
-            this.Logger?.LogInformation("Using existing virtual environment: {Name} at {Path}", name, venvPath);
+            this.Logger?.LogInformation("Using existing virtual environment: {Name} at {Path}", name, actualVenvPath);
         }
 
-        return CreateVirtualRuntimeInstance(venvPath);
+        return CreateVirtualRuntimeInstance(actualVenvPath);
     }
 
     /// <summary>
@@ -60,64 +107,72 @@ public abstract class BasePythonRootRuntime : BasePythonRuntime
     /// </summary>
     /// <param name="name">The name of the virtual environment.</param>
     /// <param name="recreateIfExists">Whether to recreate the virtual environment if it already exists.</param>
+    /// <param name="externalPath">Optional external path where the venv should be created. If null, uses default location.</param>
     /// <returns>The virtual environment runtime.</returns>
     public BasePythonVirtualRuntime GetOrCreateVirtualEnvironment(
         string name,
-        bool recreateIfExists = false)
+        bool recreateIfExists = false,
+        string? externalPath = null)
     {
-        Task<BasePythonVirtualRuntime> task = GetOrCreateVirtualEnvironmentAsync(name, recreateIfExists);
+        Task<BasePythonVirtualRuntime> task = GetOrCreateVirtualEnvironmentAsync(name, recreateIfExists, externalPath);
         task.Wait();
         return task.Result;
     }
 
     /// <summary>
     /// Deletes a virtual environment with the specified name.
+    /// For external venvs, this deletes both the metadata and the actual venv directory.
     /// </summary>
     /// <param name="name">The name of the virtual environment to delete.</param>
+    /// <param name="deleteExternalFiles">For external venvs, whether to delete the actual files (default true).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>True if the virtual environment was deleted; false if it didn't exist.</returns>
     public async Task<bool> DeleteVirtualEnvironmentAsync(
         string name,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool deleteExternalFiles = true)
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Virtual environment name cannot be null or empty.", nameof(name));
 
-        string venvPath = Path.Combine(VirtualEnvironmentsDirectory, name);
+        var venvMetadata = InstanceMetadata.GetVirtualEnvironment(name);
+        string defaultPath = Path.Combine(VirtualEnvironmentsDirectory, name);
+        string actualVenvPath = venvMetadata?.GetResolvedPath(defaultPath) ?? defaultPath;
+        bool isExternal = venvMetadata?.IsExternal ?? false;
 
-        if (!Directory.Exists(venvPath))
+        if (venvMetadata == null && !Directory.Exists(actualVenvPath))
         {
-            this.Logger?.LogWarning("Virtual environment not found: {Name} at {Path}", name, venvPath);
+            this.Logger?.LogWarning("Virtual environment not found: {Name}", name);
             return false;
         }
 
-        if (!IsValidVirtualEnvironment(venvPath))
+        if (!isExternal && !IsValidVirtualEnvironment(actualVenvPath) && Directory.Exists(actualVenvPath))
         {
-            this.Logger?.LogWarning("Directory exists but is not a valid virtual environment: {Path}", venvPath);
+            this.Logger?.LogWarning("Directory exists but is not a valid virtual environment: {Path}", actualVenvPath);
             return false;
         }
 
-        this.Logger?.LogInformation("Deleting virtual environment: {Name} at {Path}", name, venvPath);
+        this.Logger?.LogInformation("Deleting virtual environment: {Name} at {Path}", name, actualVenvPath);
 
         try
         {
-            // On Windows, files might be locked, so we need to retry
-            int attempts = 0;
-            const int maxAttempts = 5;
-            while (attempts < maxAttempts)
+            // Delete the actual venv (unless it's external and deleteExternalFiles is false)
+            if (!isExternal || deleteExternalFiles)
             {
-                try
+                if (Directory.Exists(actualVenvPath))
                 {
-                    Directory.Delete(venvPath, true);
-                    this.Logger?.LogInformation("Successfully deleted virtual environment: {Name}", name);
-                    return true;
-                }
-                catch (IOException) when (attempts < maxAttempts - 1)
-                {
-                    attempts++;
-                    await Task.Delay(100 * attempts, cancellationToken).ConfigureAwait(false);
+                    await DeleteDirectoryWithRetryAsync(actualVenvPath, cancellationToken).ConfigureAwait(false);
                 }
             }
+
+            // Remove from metadata
+            if (InstanceMetadata.RemoveVirtualEnvironment(name))
+            {
+                SaveInstanceMetadata();
+            }
+
+            this.Logger?.LogInformation("Successfully deleted virtual environment: {Name}", name);
+            return true;
         }
         catch (Exception ex)
         {
@@ -129,18 +184,17 @@ public abstract class BasePythonRootRuntime : BasePythonRuntime
                 VirtualEnvironmentName = name
             };
         }
-
-        return false;
     }
 
     /// <summary>
     /// Deletes a virtual environment with the specified name (synchronous version).
     /// </summary>
     /// <param name="name">The name of the virtual environment to delete.</param>
+    /// <param name="deleteExternalFiles">For external venvs, whether to delete the actual files (default true).</param>
     /// <returns>True if the virtual environment was deleted; false if it didn't exist.</returns>
-    public bool DeleteVirtualEnvironment(string name)
+    public bool DeleteVirtualEnvironment(string name, bool deleteExternalFiles = true)
     {
-        Task<bool> task = DeleteVirtualEnvironmentAsync(name);
+        Task<bool> task = DeleteVirtualEnvironmentAsync(name, default, deleteExternalFiles);
         task.Wait();
         return task.Result;
     }
@@ -151,24 +205,94 @@ public abstract class BasePythonRootRuntime : BasePythonRuntime
     /// <returns>A list of virtual environment names.</returns>
     public IReadOnlyList<string> ListVirtualEnvironments()
     {
-        if (!Directory.Exists(VirtualEnvironmentsDirectory))
-        {
-            return Array.Empty<string>();
-        }
-
         var virtualEnvironments = new List<string>();
-        var directories = Directory.GetDirectories(VirtualEnvironmentsDirectory);
 
-        foreach (var directory in directories)
+        // Get venvs from metadata
+        foreach (var venvMetadata in InstanceMetadata.VirtualEnvironments)
         {
-            string name = Path.GetFileName(directory);
-            if (IsValidVirtualEnvironment(directory))
+            string defaultPath = Path.Combine(VirtualEnvironmentsDirectory, venvMetadata.Name);
+            string actualPath = venvMetadata.GetResolvedPath(defaultPath);
+            
+            if (Directory.Exists(actualPath) && IsValidVirtualEnvironment(actualPath))
             {
-                virtualEnvironments.Add(name);
+                virtualEnvironments.Add(venvMetadata.Name);
             }
         }
 
-        return virtualEnvironments.AsReadOnly();
+        // Also check for legacy venvs (directories without metadata entries)
+        if (Directory.Exists(VirtualEnvironmentsDirectory))
+        {
+            foreach (var directory in Directory.GetDirectories(VirtualEnvironmentsDirectory))
+            {
+                string name = Path.GetFileName(directory);
+                
+                // Skip if already in metadata
+                if (InstanceMetadata.GetVirtualEnvironment(name) != null)
+                    continue;
+                
+                // Check if it's a valid venv without metadata entry
+                if (IsValidVirtualEnvironment(directory))
+                {
+                    virtualEnvironments.Add(name);
+                }
+            }
+        }
+
+        return virtualEnvironments.Distinct().ToList().AsReadOnly();
+    }
+
+    /// <summary>
+    /// Resolves the actual path to a virtual environment from its name.
+    /// Checks metadata for external paths.
+    /// </summary>
+    /// <param name="name">The name of the virtual environment.</param>
+    /// <returns>The actual path to the virtual environment.</returns>
+    public string ResolveVirtualEnvironmentPath(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            throw new ArgumentException("Virtual environment name cannot be null or empty.", nameof(name));
+
+        string defaultPath = Path.Combine(VirtualEnvironmentsDirectory, name);
+        var venvMetadata = InstanceMetadata.GetVirtualEnvironment(name);
+        
+        return venvMetadata?.GetResolvedPath(defaultPath) ?? defaultPath;
+    }
+
+    /// <summary>
+    /// Checks if a virtual environment with the specified name exists.
+    /// </summary>
+    /// <param name="name">The name of the virtual environment.</param>
+    /// <returns>True if a venv with this name exists (standard or external), false otherwise.</returns>
+    public bool VirtualEnvironmentExists(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return false;
+
+        // Check in metadata
+        var venvMetadata = InstanceMetadata.GetVirtualEnvironment(name);
+        if (venvMetadata != null)
+        {
+            string defaultPath = Path.Combine(VirtualEnvironmentsDirectory, name);
+            string actualPath = venvMetadata.GetResolvedPath(defaultPath);
+            return Directory.Exists(actualPath) && IsValidVirtualEnvironment(actualPath);
+        }
+
+        // Legacy support: check if directory is a valid venv without metadata
+        string legacyPath = Path.Combine(VirtualEnvironmentsDirectory, name);
+        return Directory.Exists(legacyPath) && IsValidVirtualEnvironment(legacyPath);
+    }
+
+    /// <summary>
+    /// Gets the metadata for a virtual environment.
+    /// </summary>
+    /// <param name="name">The name of the virtual environment.</param>
+    /// <returns>The metadata if found, null otherwise.</returns>
+    public VirtualEnvironmentMetadata? GetVirtualEnvironmentMetadata(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return null;
+
+        return InstanceMetadata.GetVirtualEnvironment(name);
     }
 
     /// <summary>
@@ -179,8 +303,10 @@ public abstract class BasePythonRootRuntime : BasePythonRuntime
     protected abstract BasePythonVirtualRuntime CreateVirtualRuntimeInstance(string venvPath);
 
     /// <summary>
-    /// Creates a virtual environment at the specified path.
+    /// Creates a virtual environment at the specified path using uv (significantly faster than python -m venv).
     /// </summary>
+    /// <param name="venvPath">The path where to create the virtual environment.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     protected virtual async Task CreateVirtualEnvironmentAsync(
         string venvPath,
         CancellationToken cancellationToken = default)
@@ -192,20 +318,21 @@ public abstract class BasePythonRootRuntime : BasePythonRuntime
             Directory.CreateDirectory(parentDir);
         }
 
-        // Use the built-in venv module (available in Python 3.3+)
-        // This is preferred over virtualenv as it's part of the standard library
-        var result = await ExecuteProcessAsync(
-            ["-m", "venv", venvPath],
-            null,
-            null,
-            null,
-            cancellationToken, null, null).ConfigureAwait(false);
+        // Ensure uv is available (auto-install if needed)
+        await EnsureUvAvailableAsync(cancellationToken).ConfigureAwait(false);
+
+        this.Logger?.LogInformation("Creating virtual environment at: {Path}", venvPath);
+
+        var uvArgs = new List<string> { "venv", venvPath, "--python", PythonExecutablePath };
+        var result = await ExecuteUvAsync(uvArgs, cancellationToken).ConfigureAwait(false);
 
         if (result.ExitCode != 0)
         {
             throw new PythonInstallationException(
                 $"Failed to create virtual environment at '{venvPath}'. Exit code: {result.ExitCode}. Error: {result.StandardError}");
         }
+
+        this.Logger?.LogInformation("Successfully created virtual environment");
     }
 
     /// <summary>
@@ -234,7 +361,7 @@ public abstract class BasePythonRootRuntime : BasePythonRuntime
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Virtual environment name cannot be null or empty.", nameof(name));
 
-        var venvPath = Path.Combine(VirtualEnvironmentsDirectory, name);
+        var venvPath = ResolveVirtualEnvironmentPath(name);
         if (!Directory.Exists(venvPath))
             throw new DirectoryNotFoundException($"Virtual environment not found: {name}");
 
@@ -251,9 +378,11 @@ public abstract class BasePythonRootRuntime : BasePythonRuntime
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Virtual environment name cannot be null or empty.", nameof(name));
 
-        var venvPath = Path.Combine(VirtualEnvironmentsDirectory, name);
+        var venvPath = ResolveVirtualEnvironmentPath(name);
         if (!Directory.Exists(venvPath))
             throw new DirectoryNotFoundException($"Virtual environment not found: {name}");
+
+        var venvMetadata = InstanceMetadata.GetVirtualEnvironment(name);
 
         var info = new Dictionary<string, object>
         {
@@ -261,9 +390,15 @@ public abstract class BasePythonRootRuntime : BasePythonRuntime
             ["Path"] = venvPath,
             ["SizeBytes"] = CalculateDirectorySize(venvPath),
             ["Exists"] = true,
-            ["Created"] = Directory.GetCreationTime(venvPath),
-            ["Modified"] = Directory.GetLastWriteTime(venvPath)
+            ["Created"] = venvMetadata?.CreatedDate ?? Directory.GetCreationTime(venvPath),
+            ["Modified"] = Directory.GetLastWriteTime(venvPath),
+            ["IsExternal"] = venvMetadata?.IsExternal ?? false
         };
+
+        if (venvMetadata?.IsExternal == true)
+        {
+            info["ExternalPath"] = venvMetadata.ExternalPath!;
+        }
 
         // Try to get Python version from the venv
         var pythonExe = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
@@ -274,7 +409,7 @@ public abstract class BasePythonRootRuntime : BasePythonRuntime
         {
             try
             {
-                var venvRuntime = GetOrCreateVirtualEnvironmentAsync(name).GetAwaiter().GetResult();
+                var venvRuntime = CreateVirtualRuntimeInstance(venvPath);
                 var versionInfo = venvRuntime.GetPythonVersionInfo();
                 info["PythonVersion"] = versionInfo;
             }
@@ -351,13 +486,15 @@ public abstract class BasePythonRootRuntime : BasePythonRuntime
         if (string.IsNullOrWhiteSpace(targetName))
             throw new ArgumentException("Target virtual environment name cannot be null or empty.", nameof(targetName));
 
-        var sourcePath = Path.Combine(VirtualEnvironmentsDirectory, sourceName);
+        var sourcePath = ResolveVirtualEnvironmentPath(sourceName);
         if (!Directory.Exists(sourcePath))
             throw new DirectoryNotFoundException($"Source virtual environment not found: {sourceName}");
 
-        var targetPath = Path.Combine(VirtualEnvironmentsDirectory, targetName);
-        if (Directory.Exists(targetPath))
+        // Check if target already exists
+        if (VirtualEnvironmentExists(targetName))
             throw new InvalidOperationException($"Target virtual environment already exists: {targetName}");
+
+        var targetPath = Path.Combine(VirtualEnvironmentsDirectory, targetName);
 
         this.Logger?.LogInformation("Cloning virtual environment {Source} to {Target}", sourceName, targetName);
 
@@ -369,9 +506,19 @@ public abstract class BasePythonRootRuntime : BasePythonRuntime
             // Copy all files and directories from source to target
             await CopyDirectoryAsync(sourcePath, targetPath, cancellationToken).ConfigureAwait(false);
 
+            // Create metadata for the cloned venv
+            var venvMetadata = new VirtualEnvironmentMetadata
+            {
+                Name = targetName,
+                CreatedDate = DateTime.UtcNow
+            };
+            
+            InstanceMetadata.SetVirtualEnvironment(venvMetadata);
+            SaveInstanceMetadata();
+
             this.Logger?.LogInformation("Successfully cloned virtual environment {Source} to {Target}", sourceName, targetName);
 
-            return await GetOrCreateVirtualEnvironmentAsync(targetName, cancellationToken: cancellationToken).ConfigureAwait(false);
+            return CreateVirtualRuntimeInstance(targetPath);
         }
         catch (Exception ex)
         {
@@ -387,6 +534,10 @@ public abstract class BasePythonRootRuntime : BasePythonRuntime
                     // Ignore cleanup errors
                 }
             }
+
+            // Clean up metadata if it was added
+            InstanceMetadata.RemoveVirtualEnvironment(targetName);
+            SaveInstanceMetadata();
 
             this.Logger?.LogError(ex, "Failed to clone virtual environment {Source} to {Target}", sourceName, targetName);
             throw;
@@ -410,7 +561,7 @@ public abstract class BasePythonRootRuntime : BasePythonRuntime
         if (string.IsNullOrWhiteSpace(outputPath))
             throw new ArgumentException("Output path cannot be null or empty.", nameof(outputPath));
 
-        var venvPath = Path.Combine(VirtualEnvironmentsDirectory, name);
+        var venvPath = ResolveVirtualEnvironmentPath(name);
         if (!Directory.Exists(venvPath))
             throw new DirectoryNotFoundException($"Virtual environment not found: {name}");
 
@@ -435,9 +586,6 @@ public abstract class BasePythonRootRuntime : BasePythonRuntime
                  extension == ".tar.bz2" ||
                  extension.EndsWith(".tar.zst", StringComparison.OrdinalIgnoreCase))
         {
-            // For tar archives, we'll use ArchiveHelper's extraction logic in reverse
-            // Since ArchiveHelper uses external tools, we'll use a simpler approach with System.IO.Compression
-            // For full tar support, would need a library like SharpCompress
             throw new NotSupportedException($"Archive format '{extension}' is not supported for export. Please use .zip");
         }
         else
@@ -471,9 +619,11 @@ public abstract class BasePythonRootRuntime : BasePythonRuntime
         if (!File.Exists(archivePath))
             throw new FileNotFoundException($"Archive file not found: {archivePath}", archivePath);
 
-        var targetPath = Path.Combine(VirtualEnvironmentsDirectory, name);
-        if (Directory.Exists(targetPath))
+        // Check if venv already exists
+        if (VirtualEnvironmentExists(name))
             throw new InvalidOperationException($"Virtual environment already exists: {name}");
+
+        var targetPath = Path.Combine(VirtualEnvironmentsDirectory, name);
 
         this.Logger?.LogInformation("Importing virtual environment {Name} from {Path}", name, archivePath);
 
@@ -491,9 +641,19 @@ public abstract class BasePythonRootRuntime : BasePythonRuntime
                 await ArchiveHelper.ExtractAsync(archivePath, targetPath, cancellationToken).ConfigureAwait(false);
             }
 
+            // Create metadata for the imported venv
+            var venvMetadata = new VirtualEnvironmentMetadata
+            {
+                Name = name,
+                CreatedDate = DateTime.UtcNow
+            };
+            
+            InstanceMetadata.SetVirtualEnvironment(venvMetadata);
+            SaveInstanceMetadata();
+
             this.Logger?.LogInformation("Successfully imported virtual environment {Name} from {Path}", name, archivePath);
 
-            return await GetOrCreateVirtualEnvironmentAsync(name, recreateIfExists: false, cancellationToken).ConfigureAwait(false);
+            return CreateVirtualRuntimeInstance(targetPath);
         }
         catch (Exception ex)
         {
@@ -509,6 +669,10 @@ public abstract class BasePythonRootRuntime : BasePythonRuntime
                     // Ignore cleanup errors
                 }
             }
+
+            // Clean up metadata if it was added
+            InstanceMetadata.RemoveVirtualEnvironment(name);
+            SaveInstanceMetadata();
 
             this.Logger?.LogError(ex, "Failed to import virtual environment {Name} from {Path}", name, archivePath);
             throw;
@@ -535,5 +699,31 @@ public abstract class BasePythonRootRuntime : BasePythonRuntime
             var targetSubDir = Path.Combine(targetDir, Path.GetFileName(directory));
             await CopyDirectoryAsync(directory, targetSubDir, cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// Deletes a directory with retry logic for locked files.
+    /// </summary>
+    private async Task DeleteDirectoryWithRetryAsync(string path, CancellationToken cancellationToken)
+    {
+        int attempts = 0;
+        const int maxAttempts = 5;
+
+        while (attempts < maxAttempts)
+        {
+            try
+            {
+                Directory.Delete(path, true);
+                return;
+            }
+            catch (IOException) when (attempts < maxAttempts - 1)
+            {
+                attempts++;
+                await Task.Delay(100 * attempts, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        // Final attempt - let it throw if it fails
+        Directory.Delete(path, true);
     }
 }

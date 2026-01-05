@@ -68,6 +68,7 @@ Console.WriteLine(result.StandardOutput);
 ### Install Package
 
 ```csharp
+// Uses uv for fast package installation
 await runtime.InstallPackageAsync("numpy");
 ```
 
@@ -75,7 +76,17 @@ await runtime.InstallPackageAsync("numpy");
 
 ```csharp
 var rootRuntime = (IPythonRootRuntime)runtime;
+// Uses uv for fast venv creation
 var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync("myenv");
+```
+
+### Create External Virtual Environment
+
+```csharp
+var rootRuntime = (IPythonRootRuntime)runtime;
+var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync(
+    "projectenv",
+    externalPath: "/path/to/project/.venv");
 ```
 
 ### Install to Virtual Environment
@@ -277,11 +288,14 @@ PythonExecutionResult InstallPyProject(string pyProjectFilePath, bool editable =
 ### IPythonRootRuntime (extends IPythonRuntime)
 
 ```csharp
-Task<IPythonVirtualRuntime> GetOrCreateVirtualEnvironmentAsync(string name, bool recreateIfExists = false, CancellationToken cancellationToken = default)
-IPythonVirtualRuntime GetOrCreateVirtualEnvironment(string name, bool recreateIfExists = false)
-Task<bool> DeleteVirtualEnvironmentAsync(string name, CancellationToken cancellationToken = default)
-bool DeleteVirtualEnvironment(string name)
+Task<IPythonVirtualRuntime> GetOrCreateVirtualEnvironmentAsync(string name, bool recreateIfExists = false, string? externalPath = null, CancellationToken cancellationToken = default)
+IPythonVirtualRuntime GetOrCreateVirtualEnvironment(string name, bool recreateIfExists = false, string? externalPath = null)
+Task<bool> DeleteVirtualEnvironmentAsync(string name, CancellationToken cancellationToken = default, bool deleteExternalFiles = true)
+bool DeleteVirtualEnvironment(string name, bool deleteExternalFiles = true)
 IReadOnlyList<string> ListVirtualEnvironments()
+bool VirtualEnvironmentExists(string name)
+string ResolveVirtualEnvironmentPath(string name)
+VirtualEnvironmentMetadata? GetVirtualEnvironmentMetadata(string name)
 ```
 
 ## PythonExecutionResult

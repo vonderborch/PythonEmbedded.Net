@@ -1,6 +1,6 @@
 # InstanceMetadata
 
-Represents metadata associated with a Python runtime instance, including its version, build information, and installation details.
+Represents metadata associated with a Python runtime instance, including its version, build information, installation details, and managed virtual environments.
 
 ## Namespace
 
@@ -40,13 +40,22 @@ public DateTime InstallationDate { get; set; }
 
 Gets or sets the date and time when the installation was completed.
 
+### VirtualEnvironments
+
+```csharp
+public List<VirtualEnvironmentMetadata> VirtualEnvironments { get; set; }
+```
+
+Gets or sets the collection of virtual environments managed by this instance. See [VirtualEnvironmentMetadata](./VirtualEnvironmentMetadata.md).
+
 ### Directory
 
 ```csharp
+[JsonIgnore]
 public string Directory { get; internal set; }
 ```
 
-Gets the directory path associated with the Python runtime instance. This property is set internally and should not be modified directly.
+Gets the directory path associated with the Python runtime instance. This property is set internally when loading and should not be modified directly.
 
 ## Static Methods
 
@@ -91,9 +100,48 @@ Saves the metadata for the current instance to a specified directory path.
 **Parameters:**
 - `directory` - The directory where the instance metadata file will be saved
 
+### GetVirtualEnvironment
+
+```csharp
+public VirtualEnvironmentMetadata? GetVirtualEnvironment(string name)
+```
+
+Gets the virtual environment metadata for the specified name.
+
+**Parameters:**
+- `name` - The name of the virtual environment (case-insensitive)
+
+**Returns:**
+- `VirtualEnvironmentMetadata?` - The metadata if found, null otherwise
+
+### SetVirtualEnvironment
+
+```csharp
+public void SetVirtualEnvironment(VirtualEnvironmentMetadata venvMetadata)
+```
+
+Adds or updates a virtual environment metadata entry. If a venv with the same name exists, it is replaced.
+
+**Parameters:**
+- `venvMetadata` - The virtual environment metadata to add or update
+
+### RemoveVirtualEnvironment
+
+```csharp
+public bool RemoveVirtualEnvironment(string name)
+```
+
+Removes a virtual environment metadata entry.
+
+**Parameters:**
+- `name` - The name of the virtual environment to remove (case-insensitive)
+
+**Returns:**
+- `bool` - True if the entry was removed, false if it wasn't found
+
 ## Usage
 
-InstanceMetadata is used to track Python installations and is automatically created when installing Python instances.
+InstanceMetadata is used to track Python installations and their virtual environments. It is automatically created when installing Python instances and updated when managing virtual environments.
 
 **Example:**
 
@@ -104,13 +152,52 @@ if (InstanceMetadata.Exists(instanceDirectory))
     // Load metadata
     var metadata = InstanceMetadata.Load(instanceDirectory);
     Console.WriteLine($"Python {metadata.PythonVersion} installed on {metadata.InstallationDate}");
+    
+    // List virtual environments
+    foreach (var venv in metadata.VirtualEnvironments)
+    {
+        Console.WriteLine($"  - {venv.Name} (External: {venv.IsExternal})");
+    }
+}
+
+// Working with virtual environment metadata
+var venvMetadata = metadata.GetVirtualEnvironment("myenv");
+if (venvMetadata != null)
+{
+    Console.WriteLine($"Venv created: {venvMetadata.CreatedDate}");
+}
+```
+
+## JSON Structure
+
+The metadata is stored as `instance_metadata.json` in each instance directory:
+
+```json
+{
+  "PythonVersion": "3.12.0",
+  "BuildDate": "2024-01-15T00:00:00Z",
+  "WasLatestBuild": true,
+  "InstallationDate": "2024-06-01T10:30:00Z",
+  "VirtualEnvironments": [
+    {
+      "Name": "myenv",
+      "ExternalPath": null,
+      "CreatedDate": "2024-06-01T11:00:00Z"
+    },
+    {
+      "Name": "projectenv",
+      "ExternalPath": "/path/to/project/.venv",
+      "CreatedDate": "2024-06-02T14:30:00Z"
+    }
+  ]
 }
 ```
 
 ## Related Types
 
-- [ManagerMetadata](./ManagerMetadata.md) - In-memory collection that manages multiple InstanceMetadata objects (loaded from individual instance directories)
+- [VirtualEnvironmentMetadata](./VirtualEnvironmentMetadata.md) - Metadata for individual virtual environments
+- [ManagerMetadata](./ManagerMetadata.md) - In-memory collection that manages multiple InstanceMetadata objects
 - [BasePythonManager](../Managers/BasePythonManager.md) - Uses InstanceMetadata to track instances
+- [BasePythonRootRuntime](../Runtimes/BasePythonRootRuntime.md) - Uses InstanceMetadata.VirtualEnvironments to track venvs
 
-**Note**: Each Python instance has its own `instance_metadata.json` file in its directory. There is no central metadata file. The `ManagerMetadata` class is an in-memory collection that loads metadata from individual instance directories.
-
+**Note**: Each Python instance has its own `instance_metadata.json` file in its directory. Virtual environment metadata is stored within the instance metadata, not in separate files per venv.

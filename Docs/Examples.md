@@ -45,13 +45,24 @@ Console.WriteLine(result.StandardOutput);
 
 ```csharp
 var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
-var result = await runtime.ExecuteCommandAsync("import pkg_resources; [print(d.project_name) for d in pkg_resources.working_set]");
-// Note: This requires setuptools. Use pip list for a more reliable approach:
-var pipResult = await runtime.ExecuteCommandAsync("-m pip list");
-Console.WriteLine(pipResult.StandardOutput);
+
+// List installed packages (uses uv pip list)
+var packages = await runtime.ListInstalledPackagesAsync();
+foreach (var pkg in packages)
+{
+    Console.WriteLine($"{pkg.Name}: {pkg.Version}");
+}
+
+// Check if a package is installed
+var isInstalled = await runtime.IsPackageInstalledAsync("numpy");
+
+// Get specific package version
+var version = await runtime.GetPackageVersionAsync("numpy");
 ```
 
 ## Virtual Environments
+
+Virtual environments are created using [uv](https://github.com/astral-sh/uv), which is significantly faster than the traditional `python -m venv` approach. `uv` is automatically installed when runtime instances are created.
 
 ### Creating and Using Virtual Environments
 
@@ -59,7 +70,7 @@ Console.WriteLine(pipResult.StandardOutput);
 var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
 var rootRuntime = (IPythonRootRuntime)runtime;
 
-// Create a virtual environment
+// Create a virtual environment (uses uv for fast creation)
 var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync("myproject");
 
 // Install packages in the virtual environment
@@ -72,6 +83,28 @@ var result = await venv.ExecuteCommandAsync(
 Console.WriteLine(result.StandardOutput);
 ```
 
+### Creating Virtual Environments at External Paths
+
+You can create virtual environments at custom locations outside the default instance directory:
+
+```csharp
+var rootRuntime = (IPythonRootRuntime)runtime;
+
+// Create venv at a project-specific location
+var projectVenv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync(
+    "projectenv",
+    externalPath: "/path/to/myproject/.venv");
+
+// The venv is tracked by name but stored at the external path
+var resolvedPath = rootRuntime.ResolveVirtualEnvironmentPath("projectenv");
+Console.WriteLine($"Venv located at: {resolvedPath}"); // /path/to/myproject/.venv
+
+// Get venv info
+var info = rootRuntime.GetVirtualEnvironmentInfo("projectenv");
+Console.WriteLine($"Is external: {info["IsExternal"]}"); // True
+Console.WriteLine($"External path: {info["ExternalPath"]}"); // /path/to/myproject/.venv
+```
+
 ### Listing Virtual Environments
 
 ```csharp
@@ -80,7 +113,22 @@ var venvNames = rootRuntime.ListVirtualEnvironments();
 
 foreach (var name in venvNames)
 {
-    Console.WriteLine($"Virtual environment: {name}");
+    // Check if venv is external
+    var metadata = rootRuntime.GetVirtualEnvironmentMetadata(name);
+    var location = metadata?.IsExternal == true ? $"(external: {metadata.ExternalPath})" : "(default)";
+    Console.WriteLine($"Virtual environment: {name} {location}");
+}
+```
+
+### Checking if Virtual Environment Exists
+
+```csharp
+var rootRuntime = (IPythonRootRuntime)runtime;
+
+// Check if a venv exists (works for both standard and external venvs)
+if (rootRuntime.VirtualEnvironmentExists("myproject"))
+{
+    Console.WriteLine("Virtual environment exists");
 }
 ```
 
@@ -96,8 +144,18 @@ var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync(
 ### Deleting Virtual Environments
 
 ```csharp
-// Delete a virtual environment
+// Delete a virtual environment (removes files)
 var deleted = await rootRuntime.DeleteVirtualEnvironmentAsync("myproject");
+
+// Delete external venv but keep the files on disk
+var deletedMetadataOnly = await rootRuntime.DeleteVirtualEnvironmentAsync(
+    "projectenv",
+    deleteExternalFiles: false);
+
+if (deleted)
+{
+    Console.WriteLine("Virtual environment deleted successfully");
+}
 ```
 
 ### Cloning Virtual Environments
@@ -119,20 +177,17 @@ var exportPath = await rootRuntime.ExportVirtualEnvironmentAsync("myproject", ".
 // Later, import it back
 var importedVenv = await rootRuntime.ImportVirtualEnvironmentAsync("restored_project", "./backups/myproject_venv.zip");
 ```
-if (deleted)
-{
-    Console.WriteLine("Virtual environment deleted successfully");
-}
-```
 
 ## Package Management
+
+All package operations use [uv](https://github.com/astral-sh/uv), which provides significantly faster package installation and resolution compared to pip. `uv` is automatically installed when runtime instances are created.
 
 ### Installing Single Packages
 
 ```csharp
 var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
 
-// Install latest version
+// Install latest version (uses uv)
 await runtime.InstallPackageAsync("requests");
 
 // Install specific version
@@ -143,6 +198,9 @@ await runtime.InstallPackageAsync("numpy>=1.20.0");
 
 // Upgrade package
 await runtime.InstallPackageAsync("requests", upgrade: true);
+
+// Install with custom index URL
+await runtime.InstallPackageAsync("mypackage", indexUrl: "https://my-pypi-mirror.com/simple/");
 ```
 
 ### Installing from requirements.txt

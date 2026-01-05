@@ -39,5 +39,15 @@ public class ManagerConfiguration
     /// Gets or sets whether to use exponential backoff for retries.
     /// </summary>
     public bool UseExponentialBackoff { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets a custom path to the uv executable.
+    /// If null, uv will be auto-detected from common installation locations.
+    /// </summary>
+    /// <remarks>
+    /// uv is a fast Rust-based Python package installer (10-100x faster than pip)
+    /// and is required for all package operations.
+    /// </remarks>
+    public string? UvPath { get; set; }
 }
 

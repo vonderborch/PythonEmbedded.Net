@@ -25,12 +25,13 @@ Classes for executing Python code and managing Python environments.
 ### [Models](./Models.md)
 Data models and configuration classes.
 
-- [InstanceMetadata](./Models/InstanceMetadata.md) - Metadata for Python instances
+- [InstanceMetadata](./Models/InstanceMetadata.md) - Metadata for Python instances (includes VirtualEnvironments collection)
+- [VirtualEnvironmentMetadata](./Models/VirtualEnvironmentMetadata.md) - Metadata for virtual environments
 - [ManagerConfiguration](./Models/ManagerConfiguration.md) - Configuration for managers
 - [ManagerMetadata](./Models/ManagerMetadata.md) - Metadata for managers
 - [PlatformInfo](./Models/PlatformInfo.md) - Platform information
 - [PackageInfo](./Models/PackageInfo.md) - Package information records
-- [PipConfiguration](./Models/PipConfiguration.md) - Pip configuration record
+- [PipConfiguration](./Models/PipConfiguration.md) - Pip configuration record (for reading existing pip settings)
 - [PyPIPackageInfo](./Models/PyPIPackageInfo.md) - PyPI package information
 
 ### [Exceptions](./Exceptions.md)
@@ -72,6 +73,7 @@ All classes are in the `PythonEmbedded.Net` namespace, with models in `PythonEmb
 - [Examples](../Examples.md) - Code examples
 - [Architecture](../Architecture.md) - System architecture overview
 - [Error Handling](../Error-Handling.md) - Error handling guide
+
 
 
 

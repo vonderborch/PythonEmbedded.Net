@@ -231,7 +231,25 @@ Task<InstanceMetadata> ImportInstanceAsync(
 
 ## BasePythonRuntime
 
-**Purpose**: Executes Python code, manages packages, and provides Python runtime functionality.
+**Purpose**: Executes Python code, manages packages using [uv](https://github.com/astral-sh/uv), and provides Python runtime functionality.
+
+### Package Manager (uv)
+
+This library uses `uv` as its package manager, which provides significantly faster package operations compared to pip. `uv` is automatically installed when runtime instances and virtual environments are created.
+
+#### uv Properties
+
+```csharp
+bool IsUvAvailable { get; }  // Whether uv is available
+string? UvExecutablePath { get; }  // Path to uv executable
+```
+
+#### uv Methods
+
+```csharp
+Task DetectUvAsync(CancellationToken cancellationToken = default)  // Detect uv availability
+Task EnsureUvInstalledAsync(CancellationToken cancellationToken = default)  // Install uv if needed
+```
 
 ### Core Execution Methods
 
@@ -316,14 +334,14 @@ Task<PythonExecutionResult> InstallPackageAsync(
     CancellationToken cancellationToken = default)
 ```
 
-**Purpose**: Installs a Python package using pip
+**Purpose**: Installs a Python package using `uv` (significantly faster than pip)
 
 **Parameters**:
 - `packageSpecification`: Package name or specification (e.g., "numpy", "torch==2.0.0", "numpy>=1.20.0")
 - `upgrade`: Whether to upgrade if already installed
 - `indexUrl`: Custom PyPI index URL for this installation
 
-**Throws**: `PackageInstallationException` if installation fails
+**Throws**: `PackageInstallationException` if installation fails, `InvalidOperationException` if uv is not available
 
 **Example**:
 ```csharp
@@ -610,7 +628,7 @@ static bool ValidatePackageSpecification(string packageSpec)
 
 ## BasePythonRootRuntime
 
-**Purpose**: Extends `BasePythonRuntime` with virtual environment management capabilities.
+**Purpose**: Extends `BasePythonRuntime` with virtual environment management capabilities. Virtual environments are created using `uv`, which is significantly faster than `python -m venv`.
 
 ### Virtual Environment Methods
 
@@ -620,23 +638,47 @@ static bool ValidatePackageSpecification(string packageSpec)
 Task<BasePythonVirtualRuntime> GetOrCreateVirtualEnvironmentAsync(
     string name,
     bool recreateIfExists = false,
+    string? externalPath = null,
     CancellationToken cancellationToken = default)
 ```
 
-**Purpose**: Gets or creates a virtual environment
+**Purpose**: Gets or creates a virtual environment using `uv`
+
+**Parameters**:
+- `name`: Name of the virtual environment
+- `recreateIfExists`: Whether to recreate if it already exists
+- `externalPath`: Optional external path where the venv should be created. If null, uses default location within instance directory.
 
 **Returns**: `BasePythonVirtualRuntime` instance
 
+**Throws**: `InvalidOperationException` if a venv with the same name already exists and `recreateIfExists` is false
+
 **Example**:
 ```csharp
+// Create venv in default location
 var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync("myenv");
+
+// Create venv at external path
+var externalVenv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync(
+    "projectenv",
+    externalPath: "/path/to/project/.venv");
 ```
 
 #### DeleteVirtualEnvironmentAsync
 
 ```csharp
-Task<bool> DeleteVirtualEnvironmentAsync(string name, CancellationToken cancellationToken = default)
+Task<bool> DeleteVirtualEnvironmentAsync(
+    string name,
+    CancellationToken cancellationToken = default,
+    bool deleteExternalFiles = true)
 ```
+
+**Purpose**: Deletes a virtual environment
+
+**Parameters**:
+- `name`: Name of the virtual environment to delete
+- `cancellationToken`: Cancellation token
+- `deleteExternalFiles`: For external venvs, whether to delete the actual files (default true). If false, only removes the metadata tracking.
 
 **Returns**: `true` if deleted, `false` if not found
 
@@ -662,7 +704,37 @@ long GetVirtualEnvironmentSize(string name)
 Dictionary<string, object> GetVirtualEnvironmentInfo(string name)
 ```
 
-**Returns**: Dictionary with virtual environment information (Name, Path, SizeBytes, Exists, Created, Modified, PythonVersion)
+**Returns**: Dictionary with virtual environment information (Name, Path, SizeBytes, Exists, Created, Modified, PythonVersion, IsExternal, ExternalPath)
+
+#### VirtualEnvironmentExists
+
+```csharp
+bool VirtualEnvironmentExists(string name)
+```
+
+**Purpose**: Checks if a virtual environment with the specified name exists (standard or external)
+
+**Returns**: `true` if exists, `false` otherwise
+
+#### ResolveVirtualEnvironmentPath
+
+```csharp
+string ResolveVirtualEnvironmentPath(string name)
+```
+
+**Purpose**: Resolves the actual path to a virtual environment from its name. Checks metadata for external paths.
+
+**Returns**: The actual path to the virtual environment
+
+#### GetVirtualEnvironmentMetadata
+
+```csharp
+VirtualEnvironmentMetadata? GetVirtualEnvironmentMetadata(string name)
+```
+
+**Purpose**: Gets the metadata for a virtual environment
+
+**Returns**: The metadata if found, null otherwise
 
 #### CloneVirtualEnvironmentAsync
 
@@ -826,11 +898,34 @@ public class InstanceMetadata
     public DateTime BuildDate { get; set; }
     public bool WasLatestBuild { get; set; }
     public DateTime InstallationDate { get; set; }
+    public List<VirtualEnvironmentMetadata> VirtualEnvironments { get; set; }
     public string Directory { get; } // Read-only
+    
+    // Methods
+    public VirtualEnvironmentMetadata? GetVirtualEnvironment(string name);
+    public void SetVirtualEnvironment(VirtualEnvironmentMetadata metadata);
+    public bool RemoveVirtualEnvironment(string name);
 }
 ```
 
-**Purpose**: Metadata about a Python runtime instance
+**Purpose**: Metadata about a Python runtime instance and its managed virtual environments
+
+### VirtualEnvironmentMetadata
+
+```csharp
+public class VirtualEnvironmentMetadata
+{
+    public string Name { get; set; }
+    public string? ExternalPath { get; set; }
+    public DateTime CreatedDate { get; set; }
+    public bool IsExternal { get; } // Computed from ExternalPath
+    
+    // Methods
+    public string GetResolvedPath(string defaultPath);
+}
+```
+
+**Purpose**: Metadata about a virtual environment, stored within InstanceMetadata
 
 ## Exceptions
 
@@ -975,6 +1070,24 @@ await venv.InstallPackageAsync("requests");
 var result = await venv.ExecuteCommandAsync("import requests; print(requests.__version__)");
 ```
 
+### Pattern 3b: External Virtual Environment
+
+```csharp
+var rootRuntime = await manager.GetOrCreateInstanceAsync("3.12") as BasePythonRootRuntime;
+
+// Create venv at project-specific location
+var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync(
+    "projectenv",
+    externalPath: "/path/to/myproject/.venv");
+
+// Check if it's external
+var metadata = rootRuntime.GetVirtualEnvironmentMetadata("projectenv");
+Console.WriteLine($"Is external: {metadata?.IsExternal}");  // True
+
+// Resolve actual path
+var path = rootRuntime.ResolveVirtualEnvironmentPath("projectenv");
+```
+
 ### Pattern 4: Requirements File
 
 ```csharp
@@ -1016,7 +1129,7 @@ catch (PackageInstallationException ex)
 
 4. **Exception Handling**: Most operations throw specific exceptions (e.g., `PackageInstallationException`) with additional context properties.
 
-5. **Virtual Environments**: Virtual environments are isolated - packages installed in one venv are not available in others or the root runtime.
+5. **Virtual Environments**: Virtual environments are isolated - packages installed in one venv are not available in others or the root runtime. They can be created at external paths using the `externalPath` parameter.
 
 6. **Python.NET vs Subprocess**: `PythonNetManager` provides in-process execution (faster, but requires proper disposal), while `PythonManager` uses subprocess execution (more isolated, slower).
 
@@ -1027,4 +1140,11 @@ catch (PackageInstallationException ex)
 9. **Stream Handlers**: `stdinHandler`, `stdoutHandler`, and `stderrHandler` allow real-time interaction with Python processes.
 
 10. **Batch Operations**: `InstallPackagesAsync` and `UninstallPackagesAsync` support parallel execution, but failures are captured in the result dictionary rather than throwing immediately.
+
+11. **Package Manager (uv)**: All package operations use `uv` instead of pip for significantly faster performance. `uv` is automatically installed when runtime instances are created.
+
+12. **External Virtual Environments**: Virtual environments can be created at custom locations using `externalPath`. The metadata is stored centrally in `InstanceMetadata.VirtualEnvironments`, and the venv is tracked by name regardless of physical location.
+
+13. **Duplicate Venv Names**: Virtual environment names must be unique per runtime instance, even if one is at an external location. Creating a venv with a name that already exists will throw `InvalidOperationException` unless `recreateIfExists` is true.
+
 

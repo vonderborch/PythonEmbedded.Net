@@ -199,6 +199,7 @@ internal static class ArchiveHelper
             Arguments = $"-xvf {archivePath} -C {destinationDirectory} --use-compress-program=zstd",
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            RedirectStandardInput = true,  // Prevent stdin blocking on TTY
             UseShellExecute = false,
             CreateNoWindow = true
         };
@@ -217,6 +218,7 @@ internal static class ArchiveHelper
             Arguments = $"-xf {archivePath} -C {destinationDirectory}",
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            RedirectStandardInput = true,  // Prevent stdin blocking on TTY
             UseShellExecute = false,
             CreateNoWindow = true
         };
@@ -236,6 +238,7 @@ internal static class ArchiveHelper
             Arguments = $"-xzf {archivePath} -C {destinationDirectory}",
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            RedirectStandardInput = true,  // Prevent stdin blocking on TTY
             UseShellExecute = false,
             CreateNoWindow = true
         };
@@ -255,6 +258,7 @@ internal static class ArchiveHelper
             Arguments = $"-xjf {archivePath} -C {destinationDirectory}",
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            RedirectStandardInput = true,  // Prevent stdin blocking on TTY
             UseShellExecute = false,
             CreateNoWindow = true
         };
@@ -274,6 +278,7 @@ internal static class ArchiveHelper
             Arguments = $"-xjf {archivePath} -C {destinationDirectory}",
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            RedirectStandardInput = true,  // Prevent stdin blocking on TTY
             UseShellExecute = false,
             CreateNoWindow = true
         };
@@ -286,6 +291,13 @@ internal static class ArchiveHelper
         using var process = new Process { StartInfo = startInfo };
         
         process.Start();
+        
+        // Close stdin immediately to prevent the child process from blocking on read()
+        // This is critical when the parent process has stdin connected to a TTY
+        if (startInfo.RedirectStandardInput)
+        {
+            process.StandardInput.Close();
+        }
         
         var cancellationRegistration = cancellationToken.Register(() =>
         {
@@ -324,6 +336,7 @@ internal static class ArchiveHelper
                 Arguments = "--version",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
+                RedirectStandardInput = true,  // Prevent stdin blocking on TTY
                 UseShellExecute = false,
                 CreateNoWindow = true
             };
@@ -331,6 +344,9 @@ internal static class ArchiveHelper
             using var process = Process.Start(processStartInfo);
             if (process == null)
                 return false;
+
+            // Close stdin immediately to prevent blocking
+            process.StandardInput.Close();
 
             await process.WaitForExitAsync().ConfigureAwait(false);
             return process.ExitCode == 0;

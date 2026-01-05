@@ -44,7 +44,7 @@ public class InstanceInformationIntegrationTests
         
         // Assert
         Assert.That(info, Is.Not.Null);
-        Assert.That(info!.PythonVersion, Is.EqualTo("3.12.0"));
+        Assert.That(info!.PythonVersion, Is.EqualTo("3.12.12"));
         Assert.That(info.Directory, Is.Not.Null.And.Not.Empty);
         Assert.That(Directory.Exists(info.Directory), Is.True);
     }
