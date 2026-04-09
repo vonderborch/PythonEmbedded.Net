@@ -115,10 +115,26 @@ public abstract class BasePythonRuntime
 
     /// <summary>
     /// Gets candidate paths where uv might be installed.
+    /// Includes the script directory for this interpreter (where <c>pip install uv</c> places the launcher).
     /// </summary>
-    private static string[] GetUvCandidatePaths()
+    private string[] GetUvCandidatePaths()
     {
-        var candidates = new List<string> { "uv" }; // In PATH
+        var candidates = new List<string>();
+
+        var pythonDir = Path.GetDirectoryName(PythonExecutablePath);
+        if (!string.IsNullOrEmpty(pythonDir))
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                candidates.Add(Path.Combine(pythonDir, "Scripts", "uv.exe"));
+            }
+            else
+            {
+                candidates.Add(Path.Combine(pythonDir, "uv"));
+            }
+        }
+
+        candidates.Add("uv"); // PATH
 
         var homeDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
