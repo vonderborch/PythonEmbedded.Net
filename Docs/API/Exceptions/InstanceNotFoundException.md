@@ -45,7 +45,7 @@ Thrown when attempting to get an instance that doesn't exist or when a release a
 ```csharp
 try
 {
-    var runtime = await manager.GetInstanceAsync("3.99");
+    var runtime = await manager.GetOrCreateInstanceAsync("3.99");
 }
 catch (InstanceNotFoundException ex)
 {

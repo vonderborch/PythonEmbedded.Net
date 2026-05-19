@@ -1,6 +1,6 @@
 # Troubleshooting
 
-This guide helps you diagnose and resolve common issues with PythonEmbedded.Net.
+This guide helps you diagnose and resolve common issues with PythonEmbedded.Net **1.4.x**.
 
 ## Table of Contents
 
@@ -9,6 +9,7 @@ This guide helps you diagnose and resolve common issues with PythonEmbedded.Net.
 - [Execution Issues](#execution-issues)
 - [Virtual Environment Issues](#virtual-environment-issues)
 - [Package Installation Issues](#package-installation-issues)
+- [uv vs pip](#uv-vs-pip)
 - [Python.NET Issues](#pythonnet-issues)
 - [Performance Issues](#performance-issues)
 - [Platform-Specific Issues](#platform-specific-issues)
@@ -202,38 +203,34 @@ chmod +x python-instances/python-3.12.0-*/bin/python3
 
 ### Virtual Environment Creation Fails
 
-**Symptom:** `PythonInstallationException` when creating venv.
+**Symptom:** `PythonInstallationException` or non-zero exit when creating a venv.
 
 **Possible Causes:**
-1. Python installation missing `venv` module
-2. Insufficient permissions
-3. Path issues
+1. **uv path:** `useUv: true` (default) but uv not installed and `EnsureUvInstalledAsync` failed
+2. **pip/venv path:** `useUv: false` but `venv` module unavailable
+3. Insufficient permissions or invalid path
 
 **Solutions:**
 
 ```csharp
-// Verify Python installation
 var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
-var venvResult = await runtime.ExecuteCommandAsync("-m venv --help");
-if (venvResult.ExitCode != 0)
-{
-    // venv module missing - reinstall Python
-    await manager.DeleteInstanceAsync("3.12.0");
-    runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
-}
+var rootRuntime = (BasePythonRootRuntime)runtime;
 
-// Try creating venv
+// Default: uv venv
 try
 {
-    var rootRuntime = (IPythonRootRuntime)runtime;
     var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync("testenv");
 }
-catch (PythonInstallationException ex)
+catch (Exception ex)
 {
-    // Check logs for specific error
-    _logger.LogError(ex, "Venv creation failed");
+    _logger.LogError(ex, "uv venv failed; try pip fallback or fix UvPath");
 }
+
+// Fallback: python -m venv + pip
+var pipVenv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync("testenv-pip", useUv: false);
 ```
+
+If uv workflows fail but you only need standard tooling, create the instance with `useUv: false` as well.
 
 ### Virtual Environment Not Recognized
 
@@ -243,7 +240,7 @@ catch (PythonInstallationException ex)
 
 ```csharp
 // List existing venvs
-var rootRuntime = (IPythonRootRuntime)runtime;
+var rootRuntime = (BasePythonRootRuntime)runtime;
 var venvs = rootRuntime.ListVirtualEnvironments();
 foreach (var name in venvs)
 {
@@ -268,7 +265,7 @@ var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync(
 
 ```csharp
 // Ensure you're using the venv runtime, not root runtime
-var rootRuntime = (IPythonRootRuntime)runtime;
+var rootRuntime = (BasePythonRootRuntime)runtime;
 var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync("myenv");
 
 // Install to venv
@@ -276,6 +273,51 @@ await venv.InstallPackageAsync("numpy");
 
 // Execute in venv context
 var result = await venv.ExecuteCommandAsync("import numpy; print(numpy.__version__)");
+```
+
+## uv vs pip
+
+### uv Not Found / IsUvAvailable Is False
+
+**Symptom:** Package or venv operations fail; `runtime.IsUvAvailable` is `false`; logs mention uv not found.
+
+**Solutions:**
+
+```csharp
+// 1. Let the library install uv (default on GetOrCreateInstanceAsync)
+var runtime = await manager.GetOrCreateInstanceAsync("3.12.0", useUv: true);
+await runtime.EnsureUvInstalledAsync();
+
+// 2. Point to a custom uv binary
+var manager = new PythonManager("./instances", githubClient,
+    configuration: new ManagerConfiguration { UvPath = "/usr/local/bin/uv" });
+
+// 3. Opt out and use pip for this instance/operation
+await runtime.InstallPackageAsync("numpy", useUv: false);
+```
+
+### Packages Work on Root Runtime but Fail in uv-Created Venv
+
+**Symptom:** Root instance installs packages; venv created with `uv venv` cannot install or reports uv missing.
+
+**Cause:** `uv venv` does not copy `uv` into the venv. The library resolves uv from the **base interpreter** recorded in `pyvenv.cfg` (`home = ...`).
+
+**Solutions:**
+
+- Ensure the **root** runtime has uv installed (`EnsureUvInstalledAsync` / default `GetOrCreateInstanceAsync`).
+- Inspect `pyvenv.cfg` in the venv directory; `home` should point at the embedded base Python.
+- Verify `runtime.UvPath` on the **venv** runtime is non-null after `GetOrCreateVirtualEnvironmentAsync`.
+- For pip-only venvs: `GetOrCreateVirtualEnvironmentAsync("name", useUv: false)` and `InstallPackageAsync(..., useUv: false)`.
+
+### Wrong Tooling (Expected pip, Got uv or Vice Versa)
+
+Pass `useUv` consistently on manager, venv creation, and package APIs:
+
+```csharp
+var runtime = await manager.GetOrCreateInstanceAsync("3.12.0", useUv: false);
+var root = (BasePythonRootRuntime)runtime;
+var venv = await root.GetOrCreateVirtualEnvironmentAsync("env", useUv: false);
+await venv.InstallPackageAsync("pkg", useUv: false);
 ```
 
 ## Package Installation Issues
@@ -316,7 +358,7 @@ catch (PackageInstallationException ex)
 
 ```csharp
 // Use virtual environments to isolate dependencies
-var rootRuntime = (IPythonRootRuntime)runtime;
+var rootRuntime = (BasePythonRootRuntime)runtime;
 var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync("isolated-env");
 await venv.InstallPackageAsync("conflicting-package");
 ```
@@ -442,14 +484,14 @@ if (runtime is IDisposable disposable)
 
 **Solutions:**
 
-```csharp
-// Use virtual environments to avoid reinstalling packages
-var rootRuntime = (IPythonRootRuntime)runtime;
-var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync("myenv");
+- Ensure you are using the default **`useUv: true`** (uv is much faster than pip for most workloads).
+- Use virtual environments to isolate dependencies.
+- Batch installs via `InstallRequirementsAsync`.
 
-// Install packages in parallel (if supported)
-// Or use requirements.txt for batch installation
-await venv.InstallRequirementsAsync("requirements.txt");
+```csharp
+var rootRuntime = (BasePythonRootRuntime)runtime;
+var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync("myenv");
+await venv.InstallRequirementsAsync("requirements.txt"); // useUv: true by default
 ```
 
 ### Slow Command Execution
@@ -534,7 +576,7 @@ Console.WriteLine($"Python version: {result.StandardOutput}");
 
 // Check uv availability
 Console.WriteLine($"uv available: {runtime.IsUvAvailable}");
-Console.WriteLine($"uv path: {runtime.UvExecutablePath}");
+Console.WriteLine($"uv path: {runtime.UvPath}");
 
 // List installed packages (uses uv)
 var packages = await runtime.ListInstalledPackagesAsync();

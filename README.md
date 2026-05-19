@@ -20,12 +20,13 @@ Alternatively, you can clone this repo and reference the PythonEmbedded.Net proj
 ## Features
 
 - ✅ **Automatic Python Distribution Management**: Download and install Python distributions from [python-build-standalone](https://github.com/astral-sh/python-build-standalone)
+- ✅ **Fast Package Management with uv**: [uv](https://github.com/astral-sh/uv) is the default package manager (auto-installed); opt into classic `python -m pip` / `python -m venv` with `useUv: false`
 - ✅ **Multiple Instance Support**: Manage multiple Python versions and build dates simultaneously
 - ✅ **Smart Version Matching**: 
   - Exact versions (e.g., "3.12.5") match exactly
   - Partial versions (e.g., "3.12") automatically find the latest patch version (e.g., "3.12.19")
-- ✅ **Virtual Environment Management**: Create and manage virtual environments for each Python instance
-- ✅ **Package Installation**: Install packages via pip (single packages, requirements.txt, pyproject.toml)
+- ✅ **Virtual Environment Management**: Create, clone, export, and import virtual environments for each Python instance
+- ✅ **Package Installation**: Install, list, uninstall, and upgrade packages; requirements.txt and pyproject.toml; requirements checking and PyPI search
 - ✅ **Python Execution**: Execute Python code via subprocess or in-process using Python.NET
 - ✅ **Two Execution Modes**: 
   - **PythonManager**: Subprocess-based execution (standard Python execution)
@@ -36,17 +37,9 @@ Alternatively, you can clone this repo and reference the PythonEmbedded.Net proj
 - ✅ **Structured Logging**: Full support for Microsoft.Extensions.Logging
 - ✅ **Performance Optimizations**: Optional caching for GitHub API responses, object pooling for frequently allocated objects
 
-## Installation
-
-Install the NuGet package:
-
-```bash
-dotnet add package PythonEmbedded.Net
-```
-
 ## Requirements
 
-- .NET 9.0 or later
+- .NET 9.0 or .NET 10.0 (library version **1.4.x**)
 - Octokit (included)
 - Python.NET (included, optional - only needed for PythonNetManager)
 - Tomlyn (for pyproject.toml support, included)
@@ -66,10 +59,10 @@ var manager = new PythonManager(
     githubClient: new GitHubClient(new ProductHeaderValue("MyApp")),
     logger: loggerFactory.CreateLogger<PythonManager>());
 
-// Get or create a Python instance (downloads if needed)
+// Get or create a Python instance (downloads if needed; uv is installed by default)
 var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
 
-// Cast to root runtime to access virtual environment features
+// Cast to BasePythonRootRuntime for virtual environment APIs (there is no IPythonRootRuntime interface)
 var rootRuntime = (BasePythonRootRuntime)runtime;
 
 // Create a virtual environment
@@ -97,7 +90,7 @@ var netManager = new PythonNetManager(
 var runtime = await netManager.GetOrCreateInstanceAsync("3.12.0");
 
 // Create virtual environment
-var rootRuntime = (IPythonRootRuntime)runtime;
+var rootRuntime = (BasePythonRootRuntime)runtime;
 var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync("myenv");
 
 // Install packages and execute code (same API as PythonManager)
@@ -136,7 +129,7 @@ await manager.DeleteInstanceAsync("3.11.5", new DateTime(2024, 2, 10));
 
 ```csharp
 var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
-var rootRuntime = (IPythonRootRuntime)runtime;
+var rootRuntime = (BasePythonRootRuntime)runtime;
 
 // Install a single package to the root Python installation
 await runtime.InstallPackageAsync("numpy");
@@ -153,13 +146,45 @@ await venv.InstallRequirementsAsync("requirements.txt");
 
 // Install from pyproject.toml
 await venv.InstallPyProjectAsync("pyproject.toml", editable: true);
+
+// Check requirements.txt without installing
+var status = await venv.CheckRequirementsAsync("requirements.txt");
+
+// List installed packages
+var packages = await venv.ListInstalledPackagesAsync();
+```
+
+### Package Management: uv (default) and pip fallback
+
+By default, instance creation, virtual environments, and package operations use [uv](https://github.com/astral-sh/uv). uv is detected on the system or installed automatically next to the embedded Python interpreter. Set `useUv: false` on any relevant API to use `python -m pip` and `python -m venv` instead.
+
+```csharp
+// Classic pip/venv workflow (no uv)
+var runtime = await manager.GetOrCreateInstanceAsync("3.12.0", useUv: false);
+var rootRuntime = (BasePythonRootRuntime)runtime;
+var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync("myenv", useUv: false);
+
+await venv.InstallPackageAsync("numpy", useUv: false);
+await venv.InstallRequirementsAsync("requirements.txt", useUv: false);
+```
+
+Virtual environments created with `uv venv` do not bundle pip or a local uv binary. `BasePythonVirtualRuntime` resolves the base interpreter's uv from `pyvenv.cfg` and runs uv with `--python` targeting the venv.
+
+```csharp
+// Optional: custom uv path via ManagerConfiguration
+var configuration = new ManagerConfiguration { UvPath = "/usr/local/bin/uv" };
+var manager = new PythonManager("./instances", githubClient, configuration: configuration);
+
+// Runtime exposes detected uv path
+if (runtime.IsUvAvailable)
+    Console.WriteLine($"uv: {runtime.UvPath}");
 ```
 
 ### Virtual Environment Management
 
 ```csharp
 var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
-var rootRuntime = (IPythonRootRuntime)runtime;
+var rootRuntime = (BasePythonRootRuntime)runtime;
 
 // Create a virtual environment
 var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync("myenv");
@@ -177,6 +202,25 @@ foreach (var name in venvNames)
 
 // Delete a virtual environment
 await rootRuntime.DeleteVirtualEnvironmentAsync("myenv");
+
+// Clone, export, and import virtual environments
+var clone = await rootRuntime.CloneVirtualEnvironmentAsync("myenv", "myenv-copy");
+await rootRuntime.ExportVirtualEnvironmentAsync("myenv", "./backups/myenv.zip");
+var imported = await rootRuntime.ImportVirtualEnvironmentAsync("myenv-restored", "./backups/myenv.zip");
+```
+
+### Health Checks and Diagnostics
+
+```csharp
+// Per-runtime installation health
+var health = await runtime.ValidatePythonInstallationAsync();
+
+// Manager-level system requirements and diagnostics
+var requirements = manager.GetSystemRequirements();
+var issues = await manager.DiagnoseIssuesAsync();
+
+// PyPI package lookup
+var results = await runtime.SearchPackagesAsync("requests");
 ```
 
 ### Execution Examples
@@ -212,7 +256,7 @@ var scriptResult = await runtime.ExecuteScriptAsync(
     arguments: new[] { "arg1", "arg2" });
 
 // Execute script in virtual environment
-var rootRuntime = (IPythonRootRuntime)runtime;
+var rootRuntime = (BasePythonRootRuntime)runtime;
 var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync("myenv");
 var venvResult = await venv.ExecuteScriptAsync("script.py");
 ```
@@ -317,9 +361,11 @@ Both extend `BasePythonManager` and provide the same abstract interface for inst
 
 ### Runtime Classes
 
-- **`BasePythonRuntime`**: Abstract base class providing common execution and package installation functionality
-- **`BasePythonRootRuntime`**: Extends `BasePythonRuntime` with virtual environment management
-- **`BasePythonVirtualRuntime`**: Represents a virtual environment runtime
+Cast `BasePythonRuntime` to **`BasePythonRootRuntime`** for virtual environment APIs. There are no `IPythonRuntime` / `IPythonRootRuntime` interfaces in 1.4.x.
+
+- **`BasePythonRuntime`**: Abstract base class for execution, package management (uv or pip), health checks, and PyPI search
+- **`BasePythonRootRuntime`**: Extends `BasePythonRuntime` with virtual environment management (create, clone, export, import)
+- **`BasePythonVirtualRuntime`**: Virtual environment runtime; resolves base interpreter uv via `pyvenv.cfg` when using uv-based venvs
 
 Concrete implementations:
 - **`PythonRootRuntime`**: Subprocess-based root Python runtime
@@ -358,42 +404,41 @@ manager_directory/
 
 ### BasePythonManager
 
-- `GetOrCreateInstanceAsync(pythonVersion?, buildDate?, cancellationToken?)` - Get or create a Python runtime instance
+- `GetOrCreateInstanceAsync(pythonVersion?, buildDate?, useUv = true, cancellationToken?)` - Get or create a Python runtime instance
   - `pythonVersion`: Optional. If null, uses default from configuration or "3.12"
+  - `useUv`: When true (default), ensures uv is available on the instance; when false, uses pip only
   - Supports partial versions (e.g., "3.12" finds latest patch like "3.12.19")
   - Exact versions (e.g., "3.12.5") match exactly
-- `GetOrCreateInstance(pythonVersion?, buildDate?)` - Synchronous version
+- `GetOrCreateInstance(...)`, `EnsurePythonVersionAsync(...)`, `EnsurePythonVersion(...)` - Sync and ensure helpers (all support `useUv`)
 - `DeleteInstanceAsync(pythonVersion, buildDate?, cancellationToken?)` - Delete an instance
-  - `buildDate`: `DateTime?` - Optional build date (was string? in older versions)
-- `DeleteInstance(pythonVersion, buildDate?)` - Synchronous version
-- `ListInstances()` - List all cached instances
-- `ListAvailableVersionsAsync(releaseTag?, cancellationToken?)` - List available versions from GitHub
-- `ListAvailableVersions(releaseTag?)` - Synchronous version
+- `ListInstances()`, `GetInstanceInfo(...)`, `ListAvailableVersionsAsync(...)`, `GetLatestPythonVersionAsync(...)`, `FindBestMatchingVersionAsync(...)`
+- `ExportInstanceAsync(...)`, `ImportInstanceAsync(...)` - Backup and restore full Python instances
+- `GetSystemRequirements()`, `DiagnoseIssuesAsync()`, `TestNetworkConnectivityAsync(...)`
 
 ### BasePythonRuntime
 
-- **Execution**:
-  - `ExecuteCommandAsync(command, stdinHandler?, stdoutHandler?, stderrHandler?)` - Execute Python command
-  - `ExecuteCommand(...)` - Synchronous version
-  - `ExecuteScriptAsync(scriptPath, arguments?, stdinHandler?, stdoutHandler?, stderrHandler?)` - Execute Python script
-  - `ExecuteScript(...)` - Synchronous version
-
-- **Package Installation**:
-  - `InstallPackageAsync(packageSpec, upgrade?)` - Install a single package
-  - `InstallPackage(...)` - Synchronous version
-  - `InstallRequirementsAsync(requirementsFile, upgrade?)` - Install from requirements.txt
-  - `InstallRequirements(...)` - Synchronous version
-  - `InstallPyProjectAsync(pyProjectFile, editable?)` - Install from pyproject.toml
-  - `InstallPyProject(...)` - Synchronous version
+- **uv / pip**: `UvPath`, `IsUvAvailable`, `DetectUvAsync(...)`, `EnsureUvInstalledAsync(...)`; package methods accept `useUv = true`
+- **Execution**: `ExecuteCommandAsync(...)`, `ExecuteScriptAsync(...)` (+ sync counterparts)
+- **Package management** (all support `useUv = true`):
+  - `InstallPackageAsync`, `InstallRequirementsAsync`, `InstallPyProjectAsync`
+  - `UninstallPackageAsync`, `InstallPackagesAsync`, `UninstallPackagesAsync`
+  - `ListInstalledPackagesAsync`, `GetPackageVersionAsync`, `IsPackageInstalledAsync`, `GetPackageInfoAsync`
+  - `ListOutdatedPackagesAsync`, `UpgradeAllPackagesAsync`, `DowngradePackageAsync`
+  - `ExportRequirementsAsync`, `ExportRequirementsFreezeToStringAsync`
+  - `CheckRequirementsAsync`, `GetMissingPackagesAsync`
+  - `SearchPackagesAsync`, `GetPackageMetadataAsync`
+- **Health**: `ValidatePythonInstallationAsync()`, `GetPipVersionAsync()`
 
 ### BasePythonRootRuntime (extends BasePythonRuntime)
 
-- **Virtual Environment Management**:
-  - `GetOrCreateVirtualEnvironmentAsync(name, recreateIfExists?)` - Get or create a virtual environment
-  - `GetOrCreateVirtualEnvironment(...)` - Synchronous version
-  - `DeleteVirtualEnvironmentAsync(name)` - Delete a virtual environment
-  - `DeleteVirtualEnvironment(name)` - Synchronous version
-  - `ListVirtualEnvironments()` - List all virtual environments
+Cast from `BasePythonRuntime` to access these members.
+
+- **Virtual environments** (`useUv = true` on create/clone/import):
+  - `GetOrCreateVirtualEnvironmentAsync(name, recreateIfExists?, externalPath?, useUv?, cancellationToken?)`
+  - `DeleteVirtualEnvironmentAsync(name, ...)`, `ListVirtualEnvironments()`, `VirtualEnvironmentExists(...)`
+  - `CloneVirtualEnvironmentAsync(sourceName, targetName, useUv?, ...)`
+  - `ExportVirtualEnvironmentAsync(name, outputPath, ...)`, `ImportVirtualEnvironmentAsync(name, archivePath, useUv?, ...)`
+  - `GetVirtualEnvironmentSize(...)`, `ResolveVirtualEnvironmentPath(...)`
 
 ### PythonExecutionResult
 

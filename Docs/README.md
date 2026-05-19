@@ -2,6 +2,8 @@
 
 Welcome to the PythonEmbedded.Net documentation. This directory contains comprehensive documentation for using and contributing to the library.
 
+**Current release:** 1.5.x · targets **.NET 9** and **.NET 10**
+
 ## Documentation Index
 
 ### Getting Started
@@ -12,13 +14,13 @@ Welcome to the PythonEmbedded.Net documentation. This directory contains compreh
 ### User Guides
 
 - **[API Reference](API-Reference.md)** - Complete API documentation with detailed method signatures and examples
-- **[Examples](Examples.md)** - Comprehensive examples covering various use cases
+- **[Examples](Examples.md)** - Comprehensive examples covering various use cases (including `useUv` / pip fallback)
 - **[Error Handling](Error-Handling.md)** - Exception hierarchy and error handling best practices
-- **[Troubleshooting](Troubleshooting.md)** - Common issues and solutions
+- **[Troubleshooting](Troubleshooting.md)** - Common issues and solutions (including uv vs pip)
 
 ### Technical Documentation
 
-- **[Architecture](Architecture.md)** - Design overview, patterns, and architectural decisions
+- **[Architecture](Architecture.md)** - Design overview, class hierarchy, and architectural decisions
 
 ### Contributing
 
@@ -36,6 +38,9 @@ Welcome to the PythonEmbedded.Net documentation. This directory contains compreh
 
 **See usage examples:**
 → Check [Examples](Examples.md)
+
+**Use pip instead of uv:**
+→ See [Quick Reference](Quick-Reference.md#package-manager-uv-vs-pip) and [Examples](Examples.md#package-manager-uv-vs-pip)
 
 **Handle errors:**
 → See [Error Handling](Error-Handling.md)
@@ -72,4 +77,3 @@ Docs/
 ## Feedback
 
 If you find documentation issues or have suggestions for improvements, please open an issue on GitHub.
-

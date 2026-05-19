@@ -14,6 +14,7 @@ Data models and configuration classes used throughout PythonEmbedded.Net.
 
 - [PackageInfo](./Models/PackageInfo.md) - Package information record
 - [OutdatedPackageInfo](./Models/PackageInfo.md) - Outdated package information record
+- [RequirementStatus](./Models/PackageInfo.md) - Requirements file check result record
 - [PyPIPackageInfo](./Models/PyPIPackageInfo.md) - PyPI package information record
 - [PyPISearchResult](./Models/PyPIPackageInfo.md) - PyPI search result record
 

@@ -1,25 +1,25 @@
 # Architecture
 
-This document describes the architecture and design of PythonEmbedded.Net.
+This document describes the architecture and design of PythonEmbedded.Net (version **1.4.x**, targeting **net9.0** and **net10.0**).
 
 ## Overview
 
 PythonEmbedded.Net is designed with modern C# best practices, emphasizing:
-- **Interface-based design** for testability
+- **Abstract base classes** for extensibility and shared behavior
 - **Separation of concerns** with clear responsibilities
-- **Dependency injection** support
-- **Resource management** with IDisposable
+- **Dependency injection** support (register concrete managers or base types)
+- **Resource management** with `IDisposable` where applicable (Python.NET)
 - **Asynchronous-first** API design
+- **uv by default** for package and venv operations, with optional **pip/venv** fallback via `useUv: false`
 
 ## Class Hierarchy
 
 ### Manager Layer
 
 ```
-IPythonManager (interface)
-├── BasePythonManager (abstract)
-    ├── PythonManager (subprocess execution)
-    └── PythonNetManager (Python.NET execution)
+BasePythonManager (abstract)
+├── PythonManager (subprocess execution)
+└── PythonNetManager (Python.NET execution)
 ```
 
 **Responsibilities:**
@@ -27,24 +27,26 @@ IPythonManager (interface)
 - GitHub API integration for downloading Python distributions
 - Metadata management
 - Directory structure organization
+- Optional `useUv` on `GetOrCreateInstanceAsync` (default `true`) to install/detect uv on new instances
 
 ### Runtime Layer
 
 ```
-IPythonRuntime (interface)
-├── BasePythonRuntime (abstract)
-    ├── BasePythonRootRuntime (abstract) - manages virtual environments
-    │   ├── PythonRootRuntime (subprocess)
-    │   └── PythonNetRootRuntime (Python.NET)
-    └── BasePythonVirtualRuntime (abstract) - represents a virtual environment
-        ├── PythonRootVirtualEnvironment (subprocess)
-        └── PythonNetVirtualEnvironment (Python.NET)
+BasePythonRuntime (abstract)
+├── BasePythonRootRuntime (abstract) — manages virtual environments
+│   ├── PythonRootRuntime (subprocess)
+│   └── PythonNetRootRuntime (Python.NET, IDisposable)
+└── BasePythonVirtualRuntime (abstract) — represents a virtual environment
+    ├── PythonRootVirtualEnvironment (subprocess)
+    └── PythonNetVirtualEnvironment (Python.NET, IDisposable)
 ```
+
+There are **no** `IPythonRuntime`, `IPythonRootRuntime`, or `IPythonVirtualRuntime` interfaces. Use the abstract base classes above (or concrete types such as `PythonRootRuntime`) for typing and extension.
 
 **Responsibilities:**
 - Python code execution
-- Package installation
-- Virtual environment management (root runtimes only)
+- Package installation (`useUv: true` → uv; `useUv: false` → `python -m pip`)
+- Virtual environment management (root runtimes only; `useUv: true` → `uv venv`, `useUv: false` → `python -m venv`)
 
 ### Service Layer
 
@@ -66,6 +68,7 @@ Managers act as factories for runtime instances:
 
 ```csharp
 var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
+// runtime is BasePythonRuntime; subprocess managers return BasePythonRootRuntime
 ```
 
 The manager creates the appropriate runtime type (`PythonRootRuntime` or `PythonNetRootRuntime`) based on the manager type.
@@ -76,14 +79,14 @@ Two execution strategies:
 - **Subprocess execution**: Uses `ProcessExecutor` to launch Python processes
 - **Python.NET execution**: Uses Python.NET for in-process execution
 
-Both strategies implement the same `IPythonRuntime` interface, allowing transparent switching.
+Both strategies extend the same `BasePythonRuntime` hierarchy, allowing similar APIs with different execution backends.
 
 ### Template Method Pattern
 
 Base classes define the algorithm structure while allowing derived classes to customize specific steps:
 
 ```csharp
-// BasePythonRuntime defines the ExecuteCommandAsync algorithm
+// BasePythonRuntime defines ExecuteCommandAsync / package manager flow
 // Derived classes customize PythonExecutablePath and ValidateInstallation
 ```
 
@@ -96,6 +99,7 @@ Central manager that handles:
 - **Download Coordination**: Uses `GitHubReleaseHelper` to find and download distributions from [python-build-standalone](https://github.com/astral-sh/python-build-standalone)
 - **Extraction Management**: Uses `ArchiveHelper` to extract downloaded archives
 - **Metadata Tracking**: Maintains in-memory `ManagerMetadata` collection loaded from individual instance metadata files
+- **uv bootstrap**: When `useUv` is true (default), calls `EnsureUvInstalledAsync()` on the runtime after instance creation
 
 > **Note**: This library utilizes [python-build-standalone](https://github.com/astral-sh/python-build-standalone) by [astral-sh](https://github.com/astral-sh) for providing redistributable Python distributions. We are not associated with astral-sh, but we thank them for their fantastic work.
 
@@ -104,33 +108,40 @@ Central manager that handles:
 Provides common functionality for all runtimes:
 - **Command Execution**: `ExecuteCommandAsync` / `ExecuteCommand`
 - **Script Execution**: `ExecuteScriptAsync` / `ExecuteScript`
-- **Package Installation**: `InstallPackageAsync`, `InstallRequirementsAsync`, `InstallPyProjectAsync` (using `uv`)
-- **Package Manager (uv)**: Manages `uv` installation and detection for fast package operations
+- **Package Management**: `InstallPackageAsync`, `InstallRequirementsAsync`, `InstallPyProjectAsync`, etc., with `useUv` (default `true`)
+- **uv detection**: `UvPath`, `IsUvAvailable`, `DetectUvAsync`, `EnsureUvInstalledAsync`
+- **pip fallback**: When `useUv: false`, uses `python -m pip` via `EnsurePipAvailableAsync`
 
-Delegates actual process execution to `IProcessExecutor` service.
+Delegates subprocess execution to `IProcessExecutor`.
 
 ### BasePythonRootRuntime
 
 Extends `BasePythonRuntime` with virtual environment management:
-- **Virtual Environment Creation**: Uses `uv` for fast venv creation (significantly faster than `python -m venv`)
-- **External Virtual Environments**: Supports creating venvs at arbitrary paths via `externalPath` parameter
-- **Virtual Environment Discovery**: Lists and validates virtual environments, including those at external paths
-- **Virtual Environment Runtime Creation**: Factory method for creating `IPythonVirtualRuntime` instances
+- **Virtual Environment Creation**: `uv venv` when `useUv: true` (default), or `python -m venv` when `useUv: false`
+- **External Virtual Environments**: Supports creating venvs at arbitrary paths via `externalPath`
+- **Virtual Environment Discovery**: Lists and validates virtual environments, including external paths
+- **Virtual Environment Runtime Creation**: Returns `BasePythonVirtualRuntime` instances
 - **Metadata Management**: Tracks virtual environments in `InstanceMetadata.VirtualEnvironments`
+
+### BasePythonVirtualRuntime
+
+Extends `BasePythonRuntime` for a single venv:
+- Resolves the venv’s `python` executable under `bin/` or `Scripts/`
+- **uv sharing**: Venvs created with `uv venv` typically do not ship a local `uv` binary. The runtime reads `pyvenv.cfg` (`home = ...`) and resolves uv from the **base** interpreter that created the venv, then runs `uv pip ... --python <venv-python>` for package operations
 
 ### Process Executor
 
 Extracted service for process execution:
 - **Abstraction**: Allows mocking for testing
 - **Reusability**: Can be used independently
-- **Testability**: Interface enables test doubles
+- **Testability**: `IProcessExecutor` enables test doubles
 
 ## Data Flow
 
 ### Instance Creation Flow
 
 ```
-GetOrCreateInstanceAsync()
+GetOrCreateInstanceAsync(version, buildDate, useUv: true)
     ├── Check metadata for existing instance
     ├── If not found:
     │   ├── Find release asset (GitHubReleaseHelper)
@@ -139,15 +150,15 @@ GetOrCreateInstanceAsync()
     │   ├── Verify installation (ArchiveHelper)
     │   ├── Find Python install path
     │   └── Save metadata
-    ├── Create runtime instance (factory method)
-    └── Ensure uv is installed for package management
+    ├── Create runtime instance (GetPythonRuntimeForInstance)
+    └── If useUv: EnsureUvInstalledAsync()
 ```
 
 ### Command Execution Flow
 
 ```
 ExecuteCommandAsync()
-    ├── Validate installation
+    ├── ValidateInstallation()
     ├── Build ProcessStartInfo
     ├── ProcessExecutor.ExecuteAsync()
     │   ├── Start process
@@ -160,18 +171,17 @@ ExecuteCommandAsync()
 ### Virtual Environment Creation Flow
 
 ```
-GetOrCreateVirtualEnvironmentAsync(name, recreateIfExists, externalPath)
+GetOrCreateVirtualEnvironmentAsync(name, recreateIfExists, externalPath, useUv)
     ├── Validate installation
-    ├── Check if venv with name exists (in InstanceMetadata)
-    ├── If exists and recreateIfExists is false:
-    │   └── Throw InvalidOperationException
+    ├── Check metadata / path for existing venv
     ├── If not exists or recreate:
     │   ├── Determine path (external or default)
-    │   ├── Ensure uv is installed
-    │   ├── Execute: uv venv <path>  (faster than python -m venv)
-    │   ├── Add VirtualEnvironmentMetadata to InstanceMetadata
+    │   ├── If useUv: EnsureUvInstalledAsync() then uv venv <path>
+    │   └── Else: python -m venv <path>
+    │   ├── Add VirtualEnvironmentMetadata
     │   └── Save InstanceMetadata
-    └── Create IPythonVirtualRuntime instance
+    ├── Create BasePythonVirtualRuntime instance
+    └── If useUv: EnsureUvInstalledAsync() on venv runtime (pyvenv.cfg → base uv)
 ```
 
 ## Directory Structure
@@ -184,14 +194,15 @@ manager_directory/
     │   └── {venv_name}/
     │       ├── bin/ (or Scripts/)
     │       ├── lib/
-    │       └── pyvenv.cfg
+    │       └── pyvenv.cfg           # home = base interpreter (used for uv resolution)
     └── instance_metadata.json       # Instance-specific metadata (includes VirtualEnvironments array)
 ```
 
-**Notes**: 
+**Notes**:
 - The `ManagerMetadata` class is an in-memory collection that loads instance metadata from individual `instance_metadata.json` files in each instance directory. There is no central metadata file.
-- Virtual environments can also be created at external paths. In this case, the venv files are at the external location, but the `VirtualEnvironmentMetadata` is stored in `instance_metadata.json` with the `ExternalPath` property set.
+- Virtual environments can also be created at external paths. The venv files live at the external location; `VirtualEnvironmentMetadata` is stored in `instance_metadata.json` with `ExternalPath` set when applicable.
 - Example of `instance_metadata.json` with virtual environments:
+
 ```json
 {
   "PythonVersion": "3.12.0",
@@ -246,28 +257,17 @@ All logging uses `Microsoft.Extensions.Logging` with structured logging:
 - Log levels: Trace, Debug, Information, Warning, Error, Critical
 - Contextual information in log messages
 
-### Log Levels
-
-- **Trace**: Detailed diagnostic information
-- **Debug**: Diagnostic information for debugging
-- **Information**: General informational messages
-- **Warning**: Warning messages (e.g., non-zero exit codes)
-- **Error**: Error messages with exceptions
-- **Critical**: Critical failures
-
 ## Testing Strategy
 
-### Interfaces Enable Testing
+### Abstractions for Testing
 
-All major components implement interfaces, enabling:
-- **Mocking**: Use mocking frameworks to create test doubles
-- **Isolation**: Test components in isolation
-- **Faster tests**: Avoid real Python installations in unit tests
+- **`IProcessExecutor`**: Mock process execution in unit tests
+- **Concrete managers/runtimes**: Integration tests use real Python installations (often `[Category("Integration")]`)
 
 ### Test Structure
 
-- **Unit Tests**: Test individual components with mocks
-- **Integration Tests**: Test with real Python installations (marked with `[Ignore]` for CI)
+- **Unit Tests**: Test helpers and components with mocks where possible
+- **Integration Tests**: Test with real Python installations and uv/pip paths
 
 ## Extension Points
 
@@ -296,18 +296,29 @@ public class CustomRuntime : BasePythonRootRuntime
 }
 ```
 
-## Package Manager (uv)
+## Package Manager (uv vs pip)
 
-This library uses [uv](https://github.com/astral-sh/uv) as its package manager instead of pip. Key benefits:
+**Default:** [uv](https://github.com/astral-sh/uv) for venv creation and package operations.
 
-- **Significantly faster** package installation (10-100x faster than pip)
-- **Fast virtual environment creation** using `uv venv`
-- **Drop-in replacement** for pip commands
-- **Automatic installation** when runtime instances are created
+| Operation | `useUv: true` (default) | `useUv: false` |
+|-----------|-------------------------|----------------|
+| New instance | `EnsureUvInstalledAsync()` on runtime | No uv install |
+| Create venv | `uv venv` | `python -m venv` |
+| Install package | `uv pip install ... --python <exe>` | `python -m pip install` |
+| List packages | `uv pip list` | `python -m pip list` |
 
-`uv` is automatically installed by calling `EnsureUvInstalledAsync()` when:
-1. A new runtime instance is created via `GetOrCreateInstanceAsync()`
-2. A new virtual environment is created via `GetOrCreateVirtualEnvironmentAsync()`
+**Virtual environments and uv:** `uv venv` does not copy `uv` into the venv. `BasePythonVirtualRuntime` reads `pyvenv.cfg` and finds uv next to the base interpreter’s `home` path, then passes `--python` pointing at the venv interpreter.
+
+**Configuration:** `ManagerConfiguration.UvPath` sets a custom uv executable path for detection/install flows.
+
+**Opting out globally for an instance:**
+
+```csharp
+var runtime = await manager.GetOrCreateInstanceAsync("3.12.0", useUv: false);
+var venv = await ((BasePythonRootRuntime)runtime)
+    .GetOrCreateVirtualEnvironmentAsync("legacy", useUv: false);
+await venv.InstallPackageAsync("requests", useUv: false);
+```
 
 ## Performance Considerations
 
@@ -321,18 +332,13 @@ This library uses [uv](https://github.com/astral-sh/uv) as its package manager i
 
 - Instance metadata cached in memory
 - Python installations persist on disk
-- No redundant downloads
-
-### Resource Pooling
-
-- Process executor can be shared across operations
-- Python.NET initialization is singleton-based
+- Optional `IMemoryCache` for GitHub API responses
 
 ### Fast Package Operations (uv)
 
-- Package installation uses `uv` for 10-100x faster performance
-- Virtual environment creation uses `uv venv` instead of `python -m venv`
-- Package queries use `importlib.metadata` for fast local lookups
+- Package installation uses uv for much faster I/O than pip alone
+- Virtual environment creation uses `uv venv` by default
+- Package queries can use `importlib.metadata` for fast local lookups where applicable
 
 ## Security Considerations
 
@@ -348,17 +354,9 @@ This library uses [uv](https://github.com/astral-sh/uv) as its package manager i
 - No arbitrary file access
 - Controlled directory structure
 
-## Future Enhancements
-
-Potential areas for extension:
-- **Caching**: Add caching layer for GitHub API responses
-- **Parallel Execution**: Support for parallel package installations
-- **Custom Distributions**: Support for custom Python distributions
-- **Cross-Platform Tools**: Better handling of platform-specific tools (tar, zstd)
-
 ## See Also
 
 - [Getting Started](Getting-Started.md)
 - [API Reference](API-Reference.md)
 - [Examples](Examples.md)
-
+- [Troubleshooting](Troubleshooting.md)

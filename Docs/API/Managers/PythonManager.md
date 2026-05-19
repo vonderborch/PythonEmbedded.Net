@@ -67,13 +67,16 @@ Gets a Python runtime instance for the specified instance metadata. Returns a [P
 
 ## Usage
 
-PythonManager creates [PythonRootRuntime](../Runtimes/PythonRootRuntime.md) instances that execute Python code via subprocess. This is the recommended approach for most scenarios.
+PythonManager creates [PythonRootRuntime](../Runtimes/PythonRootRuntime.md) instances that execute Python code via subprocess. This is the recommended approach for most scenarios. By default, `GetOrCreateInstanceAsync` installs **uv** for package management; pass `useUv: false` to skip uv and use pip/venv only.
 
 **Example:**
 
 ```csharp
-// Get or create a Python instance
+// Get or create a Python instance (uv installed by default)
 var runtime = await manager.GetOrCreateInstanceAsync("3.12");
+
+// Or skip uv setup
+var pipOnlyRuntime = await manager.GetOrCreateInstanceAsync("3.12", useUv: false);
 
 // Execute Python code
 var result = await runtime.ExecuteCommandAsync("-c \"print('Hello, World!')\"");

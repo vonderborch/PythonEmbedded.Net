@@ -56,10 +56,11 @@ Console.WriteLine($"Proxy: {pipConfig.Proxy}");
 
 ## Note
 
-Package installation is handled by `uv`, not pip. The `InstallPackageAsync` method accepts an optional `indexUrl` parameter directly:
+By default, package installation uses **uv** (`useUv: true`). Pass `useUv: false` on install methods to use `python -m pip` instead. The `InstallPackageAsync` method accepts an optional `indexUrl` parameter directly:
 
 ```csharp
 await runtime.InstallPackageAsync("requests", indexUrl: "https://custom-pypi.example.com/simple/");
+await runtime.InstallPackageAsync("requests", useUv: false); // classic pip
 ```
 
 ## Related Types

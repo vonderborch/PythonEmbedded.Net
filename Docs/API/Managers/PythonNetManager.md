@@ -67,12 +67,12 @@ Gets a Python.NET runtime instance for the specified instance metadata. Returns 
 
 ## Usage
 
-PythonNetManager creates [PythonNetRootRuntime](../Runtimes/PythonNetRootRuntime.md) instances that execute Python code in-process using Python.NET. This provides better performance and direct .NET-Python interop.
+PythonNetManager creates [PythonNetRootRuntime](../Runtimes/PythonNetRootRuntime.md) instances that execute Python code in-process using Python.NET. This provides better performance and direct .NET-Python interop. Package and venv behavior matches [PythonManager](./PythonManager.md): uv is the default; use `useUv: false` for pip/venv only.
 
 **Example:**
 
 ```csharp
-// Get or create a Python instance
+// Get or create a Python instance (uv installed by default)
 var runtime = await manager.GetOrCreateInstanceAsync("3.12");
 
 // Execute Python code (in-process)

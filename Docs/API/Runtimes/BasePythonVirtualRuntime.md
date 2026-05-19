@@ -47,6 +47,12 @@ Gets the working directory for this virtual environment (defaults to the virtual
 
 Inherits all methods from [BasePythonRuntime](./BasePythonRuntime.md) for executing Python code and managing packages.
 
+### uv detection override
+
+Virtual environment runtimes override uv candidate path discovery to read `pyvenv.cfg` and locate the **base interpreter's** `uv` executable. This allows package operations to work in `uv venv` environments (which do not include pip or a local uv copy) by reusing the root instance's uv with `--python` targeting the venv interpreter.
+
+When using `useUv: false` to create a venv with `python -m venv`, pip is included in the venv and package operations use that environment's pip directly.
+
 ## Related Types
 
 - [BasePythonRuntime](./BasePythonRuntime.md) - Base class

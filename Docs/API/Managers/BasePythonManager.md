@@ -59,6 +59,7 @@ Initializes a new instance of the BasePythonManager class.
 public async Task<BasePythonRuntime> GetOrCreateInstanceAsync(
     string? pythonVersion = null,
     DateTime? buildDate = null,
+    bool useUv = true,
     CancellationToken cancellationToken = default)
 ```
 
@@ -67,49 +68,54 @@ Gets or creates a Python runtime instance for the specified version. Downloads a
 **Parameters:**
 - `pythonVersion` - Optional Python version (e.g., "3.12", "3.11.5"). If null, uses default from configuration or "3.12". Supports partial versions (e.g., "3.10" will find the latest patch version like "3.10.19")
 - `buildDate` - Optional build date. If null, uses the latest build. If specified, finds the first release on or after this date
+- `useUv` - When `true` (default), calls `EnsureUvInstalledAsync` on the returned runtime; when `false`, skips uv setup
 - `cancellationToken` - Cancellation token
 
 **Returns:**
-- `Task<BasePythonRuntime>` - A Python runtime instance
+- `Task<BasePythonRuntime>` - A `BasePythonRuntime` instance
 
 **Exceptions:**
 - [InstanceNotFoundException](../Exceptions/InstanceNotFoundException.md) - When the specified version/build date is not found
 - [PlatformNotSupportedException](../Exceptions/PlatformNotSupportedException.md) - When the platform is not supported
 - [PythonInstallationException](../Exceptions/PythonInstallationException.md) - When installation fails
 
-### GetInstanceAsync
+### GetOrCreateInstance
 
 ```csharp
-public async Task<BasePythonRuntime?> GetInstanceAsync(
+public BasePythonRuntime GetOrCreateInstance(
     string pythonVersion,
     DateTime? buildDate = null,
+    bool useUv = true)
+```
+
+Synchronous version of `GetOrCreateInstanceAsync`. `pythonVersion` is required.
+
+### EnsurePythonVersionAsync
+
+```csharp
+public async Task<BasePythonRuntime> EnsurePythonVersionAsync(
+    string pythonVersion,
+    DateTime? buildDate = null,
+    bool useUv = true,
     CancellationToken cancellationToken = default)
 ```
 
-Gets an existing Python runtime instance without creating a new one.
+Ensures a Python version is available (delegates to `GetOrCreateInstanceAsync`).
 
-**Parameters:**
-- `pythonVersion` - Python version (e.g., "3.12")
-- `buildDate` - Optional build date
-- `cancellationToken` - Cancellation token
-
-**Returns:**
-- `Task<BasePythonRuntime?>` - A Python runtime instance, or null if not found
-
-### DeleteInstance
+### DeleteInstanceAsync / DeleteInstance
 
 ```csharp
+public async Task<bool> DeleteInstanceAsync(
+    string pythonVersion,
+    DateTime? buildDate = null,
+    CancellationToken cancellationToken = default)
+
 public bool DeleteInstance(string pythonVersion, DateTime? buildDate = null)
 ```
 
 Deletes a Python instance from disk.
 
-**Parameters:**
-- `pythonVersion` - Python version
-- `buildDate` - Optional build date
-
-**Returns:**
-- `bool` - True if the instance was deleted, false if not found
+**Returns:** `true` if deleted, `false` if not found
 
 ### ListInstances
 
@@ -215,16 +221,21 @@ Tests network connectivity to the GitHub API.
 **Returns:**
 - `bool` - True if network connectivity is available
 
-### DiagnoseIssues
-
-```csharp
-public IReadOnlyList<string> DiagnoseIssues()
-```
+### DiagnoseIssues / DiagnoseIssuesAsync
 
 Performs diagnostics and returns a list of issues found.
 
-**Returns:**
-- `IReadOnlyList<string>` - List of diagnostic messages
+### GetInstanceInfo / GetInstanceSize / GetTotalDiskUsage
+
+Query instance metadata and disk usage.
+
+### ExportInstanceAsync / ImportInstanceAsync
+
+Export or import a Python instance archive (zip by default).
+
+### GetSystemRequirements
+
+Returns platform and disk-space check results.
 
 ## Abstract Methods
 

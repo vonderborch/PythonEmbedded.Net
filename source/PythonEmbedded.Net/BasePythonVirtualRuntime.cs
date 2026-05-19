@@ -33,6 +33,13 @@ public abstract class BasePythonVirtualRuntime : BasePythonRuntime
     protected override string WorkingDirectory => VirtualEnvironmentPath;
 
     /// <summary>
+    /// Virtual environments created by <c>uv venv</c> do not include pip or a local uv copy.
+    /// Fall back to the base interpreter's uv from <c>pyvenv.cfg</c>; uv commands target this venv via <c>--python</c>.
+    /// </summary>
+    protected override IEnumerable<string> GetAdditionalUvCandidatePaths() =>
+        GetUvCandidatePathsFromPyvenvCfg(VirtualEnvironmentPath);
+
+    /// <summary>
     /// Validates that the virtual environment installation is complete and valid.
     /// </summary>
     protected override void ValidateInstallation()

@@ -1,6 +1,6 @@
 # PythonEmbedded.Net API Reference
 
-Complete API documentation for the PythonEmbedded.Net library. This documentation covers all public classes, interfaces, models, and exceptions.
+Complete API documentation for the PythonEmbedded.Net library (version **1.4.x**). This documentation covers all public classes, abstract base classes, models, and exceptions.
 
 ## Table of Contents
 

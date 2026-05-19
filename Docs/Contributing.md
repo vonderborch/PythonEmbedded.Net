@@ -29,7 +29,7 @@ By participating in this project, you agree to maintain a respectful and inclusi
 
 ### Prerequisites
 
-- .NET 9.0 SDK or later
+- .NET 9.0 or .NET 10.0 SDK
 - Visual Studio, Rider, or VS Code with C# extension
 - Git
 
@@ -77,14 +77,15 @@ This project follows modern C# best practices:
 - **File-scoped namespaces**: `namespace PythonEmbedded.Net;`
 - **Records for value objects**: Use `record` types for immutable data
 - **Async/Await**: Use `ConfigureAwait(false)` in library code
-- **Interfaces first**: Create interfaces for testability
+- **Abstract base classes**: Public APIs extend `BasePythonManager`, `BasePythonRuntime`, etc.; use `IProcessExecutor` and similar interfaces for cross-cutting services
 - **Nullable reference types**: Enabled, use `?` appropriately
 - **Collection expressions**: Use `[]` for arrays when appropriate
 
 ### Naming Conventions
 
 - **Classes**: PascalCase (e.g., `PythonManager`)
-- **Interfaces**: PascalCase with `I` prefix (e.g., `IPythonRuntime`)
+- **Interfaces**: PascalCase with `I` prefix (e.g., `IProcessExecutor`)
+- **Abstract classes**: PascalCase (e.g., `BasePythonRuntime`, `BasePythonRootRuntime`)
 - **Methods**: PascalCase (e.g., `ExecuteCommandAsync`)
 - **Parameters**: camelCase (e.g., `pythonVersion`)
 - **Private fields**: camelCase with `_` prefix (e.g., `_logger`)
@@ -251,19 +252,18 @@ Update relevant docs in `Docs/` directory:
 
 ### Design Principles
 
-- **Interfaces first**: Create interfaces for major components
+- **Abstract base classes**: Public runtime/manager APIs use `BasePython*` classes; add interfaces for services (e.g., `IProcessExecutor`) when mocking is needed
 - **Dependency injection**: Support DI for testability
 - **Separation of concerns**: Clear responsibility boundaries
 - **Resource management**: Implement IDisposable where appropriate
 
 ### Adding New Features
 
-1. **Design the interface**: Define the public API first
-2. **Create interfaces**: Add interfaces for testability
-3. **Implement base classes**: Use abstract base classes for shared logic
-4. **Add concrete implementations**: Implement specific behaviors
-5. **Write tests**: Comprehensive test coverage
-6. **Update documentation**: API reference and examples
+1. **Design the public API**: Define methods on the appropriate `Base*` class or concrete type
+2. **Implement shared logic**: Use abstract base classes for common behavior
+3. **Add concrete implementations**: Implement specific behaviors (`PythonManager`, `PythonRootRuntime`, etc.)
+4. **Write tests**: Unit and integration coverage as appropriate
+5. **Update documentation**: API reference, examples, and troubleshooting
 
 ### Extending Existing Features
 

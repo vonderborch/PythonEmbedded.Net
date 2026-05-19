@@ -61,6 +61,7 @@ Console.WriteLine(result.StandardOutput); // "Hello, World!"
 Task<BasePythonRuntime> GetOrCreateInstanceAsync(
     string? pythonVersion = null,
     DateTime? buildDate = null,
+    bool useUv = true,
     CancellationToken cancellationToken = default)
 ```
 
@@ -69,6 +70,8 @@ Task<BasePythonRuntime> GetOrCreateInstanceAsync(
 - Supports partial versions: "3.12" finds latest patch version (e.g., "3.12.19")
 - If instance exists, returns existing runtime
 - If instance doesn't exist, downloads and installs Python from GitHub releases
+- When `useUv` is `true` (default), calls `EnsureUvInstalledAsync` on the runtime
+- When `useUv` is `false`, skips uv setup (use pip via `useUv: false` on package methods)
 - Returns a `BasePythonRuntime` instance
 
 **Example**:
@@ -168,10 +171,11 @@ Task<string?> FindBestMatchingVersionAsync(string versionSpec, CancellationToken
 Task<BasePythonRuntime> EnsurePythonVersionAsync(
     string pythonVersion,
     DateTime? buildDate = null,
+    bool useUv = true,
     CancellationToken cancellationToken = default)
 ```
 
-**Behavior**: Same as `GetOrCreateInstanceAsync` but throws if version cannot be ensured
+**Behavior**: Delegates to `GetOrCreateInstanceAsync` (downloads if missing)
 
 #### CheckDiskSpace
 
@@ -231,24 +235,26 @@ Task<InstanceMetadata> ImportInstanceAsync(
 
 ## BasePythonRuntime
 
-**Purpose**: Executes Python code, manages packages using [uv](https://github.com/astral-sh/uv), and provides Python runtime functionality.
+**Purpose**: Executes Python code, manages packages, and provides Python runtime functionality. Default package operations use [uv](https://github.com/astral-sh/uv); set `useUv: false` to use `python -m pip`.
 
-### Package Manager (uv)
+### Package Manager (uv and pip)
 
-This library uses `uv` as its package manager, which provides significantly faster package operations compared to pip. `uv` is automatically installed when runtime instances and virtual environments are created.
+- **`useUv: true` (default)**: Uses `uv pip ... --python <interpreter>`. uv is ensured on instance/venv creation when manager/root methods pass `useUv: true`.
+- **`useUv: false`**: Uses `python -m pip` and standard `python -m venv` for venv creation.
+- **uv detection**: Adjacent to Python executable → runtime-specific paths → common locations → `PATH`. `BasePythonVirtualRuntime` also reads `pyvenv.cfg` `home =` and looks for uv next to the **base interpreter** (uv-created venvs often have no local uv copy).
 
 #### uv Properties
 
 ```csharp
 bool IsUvAvailable { get; }  // Whether uv is available
-string? UvExecutablePath { get; }  // Path to uv executable
+string? UvPath { get; }  // Detected path to uv executable
 ```
 
 #### uv Methods
 
 ```csharp
-Task DetectUvAsync(CancellationToken cancellationToken = default)  // Detect uv availability
-Task EnsureUvInstalledAsync(CancellationToken cancellationToken = default)  // Install uv if needed
+Task<bool> DetectUvAsync(string? customPath = null, CancellationToken cancellationToken = default)
+Task<bool> EnsureUvInstalledAsync(CancellationToken cancellationToken = default)  // pip install uv if missing
 ```
 
 ### Core Execution Methods
@@ -331,17 +337,19 @@ Task<PythonExecutionResult> InstallPackageAsync(
     string packageSpecification,
     bool upgrade = false,
     string? indexUrl = null,
+    bool useUv = true,
     CancellationToken cancellationToken = default)
 ```
 
-**Purpose**: Installs a Python package using `uv` (significantly faster than pip)
+**Purpose**: Installs a Python package via uv or pip
 
 **Parameters**:
 - `packageSpecification`: Package name or specification (e.g., "numpy", "torch==2.0.0", "numpy>=1.20.0")
 - `upgrade`: Whether to upgrade if already installed
 - `indexUrl`: Custom PyPI index URL for this installation
+- `useUv`: When `true` (default), uv; when `false`, `python -m pip`
 
-**Throws**: `PackageInstallationException` if installation fails, `InvalidOperationException` if uv is not available
+**Throws**: `PackageInstallationException` if installation fails; `InvalidOperationException` if the selected package manager is unavailable
 
 **Example**:
 ```csharp
@@ -355,6 +363,7 @@ await runtime.InstallPackageAsync("torch==2.0.0", upgrade: true);
 Task<PythonExecutionResult> InstallRequirementsAsync(
     string requirementsFilePath,
     bool upgrade = false,
+    bool useUv = true,
     CancellationToken cancellationToken = default)
 ```
 
@@ -362,12 +371,33 @@ Task<PythonExecutionResult> InstallRequirementsAsync(
 
 **Throws**: `RequirementsFileException` if installation fails
 
+#### CheckRequirementsAsync
+
+```csharp
+Task<IReadOnlyList<RequirementStatus>> CheckRequirementsAsync(
+    string requirementsFilePath,
+    CancellationToken cancellationToken = default)
+```
+
+**Purpose**: Reports per-line install/version status for a requirements file (embedded Python script; not uv/pip)
+
+**Returns**: `RequirementStatus` records: `PackageSpecification`, `IsInstalled`, `MeetsRequirement`, `InstalledVersion`, `RequiredVersion`
+
+#### GetMissingPackagesAsync
+
+```csharp
+Task<string[]> GetMissingPackagesAsync(string[] packageNames, CancellationToken cancellationToken = default)
+```
+
+**Purpose**: Fast import check via `importlib.util.find_spec` (single Python call). Maps `-` to `_` in module names.
+
 #### InstallPyProjectAsync
 
 ```csharp
 Task<PythonExecutionResult> InstallPyProjectAsync(
     string pyProjectFilePath,
     bool editable = false,
+    bool useUv = true,
     CancellationToken cancellationToken = default)
 ```
 
@@ -376,54 +406,39 @@ Task<PythonExecutionResult> InstallPyProjectAsync(
 **Parameters**:
 - `pyProjectFilePath`: Path to directory containing pyproject.toml or the file itself
 - `editable`: Whether to install in editable mode (`pip install -e`)
+- `useUv`: When `true` (default), uv; when `false`, pip
 
 #### ListInstalledPackagesAsync
 
 ```csharp
-Task<IReadOnlyList<PackageInfo>> ListInstalledPackagesAsync(CancellationToken cancellationToken = default)
+Task<IReadOnlyList<PackageInfo>> ListInstalledPackagesAsync(
+    bool useUv = true,
+    CancellationToken cancellationToken = default)
 ```
 
 **Returns**: List of installed packages with name, version, location, and summary
 
-#### GetPackageVersionAsync
+#### GetPackageVersionAsync / IsPackageInstalledAsync / GetPackageInfoAsync
 
-```csharp
-Task<string?> GetPackageVersionAsync(string packageName, CancellationToken cancellationToken = default)
-```
-
-**Returns**: Package version if installed, `null` otherwise
-
-#### IsPackageInstalledAsync
-
-```csharp
-Task<bool> IsPackageInstalledAsync(string packageName, CancellationToken cancellationToken = default)
-```
-
-**Returns**: `true` if package is installed, `false` otherwise
-
-#### GetPackageInfoAsync
-
-```csharp
-Task<PackageInfo?> GetPackageInfoAsync(string packageName, CancellationToken cancellationToken = default)
-```
-
-**Returns**: Detailed package information if installed, `null` otherwise
+All accept `bool useUv = true` before `CancellationToken`. Use `pip show` / `pip list --format=json`.
 
 #### UninstallPackageAsync
 
 ```csharp
 Task<PythonExecutionResult> UninstallPackageAsync(
     string packageName,
-    bool removeDependencies = false,
+    bool useUv = true,
     CancellationToken cancellationToken = default)
 ```
 
-**Note**: `removeDependencies` parameter is accepted but not fully implemented
+**Purpose**: Uninstalls a package (`pip uninstall -y`)
 
 #### ListOutdatedPackagesAsync
 
 ```csharp
-Task<IReadOnlyList<OutdatedPackageInfo>> ListOutdatedPackagesAsync(CancellationToken cancellationToken = default)
+Task<IReadOnlyList<OutdatedPackageInfo>> ListOutdatedPackagesAsync(
+    bool useUv = true,
+    CancellationToken cancellationToken = default)
 ```
 
 **Returns**: List of packages with available updates (includes installed and latest versions)
@@ -431,7 +446,9 @@ Task<IReadOnlyList<OutdatedPackageInfo>> ListOutdatedPackagesAsync(CancellationT
 #### UpgradeAllPackagesAsync
 
 ```csharp
-Task<PythonExecutionResult> UpgradeAllPackagesAsync(CancellationToken cancellationToken = default)
+Task<PythonExecutionResult> UpgradeAllPackagesAsync(
+    bool useUv = true,
+    CancellationToken cancellationToken = default)
 ```
 
 **Behavior**: Upgrades all outdated packages sequentially
@@ -442,6 +459,7 @@ Task<PythonExecutionResult> UpgradeAllPackagesAsync(CancellationToken cancellati
 Task<PythonExecutionResult> DowngradePackageAsync(
     string packageName,
     string targetVersion,
+    bool useUv = true,
     CancellationToken cancellationToken = default)
 ```
 
@@ -454,6 +472,7 @@ Task<Dictionary<string, PythonExecutionResult>> InstallPackagesAsync(
     IEnumerable<string> packages,
     bool parallel = false,
     bool upgrade = false,
+    bool useUv = true,
     CancellationToken cancellationToken = default)
 ```
 
@@ -469,7 +488,7 @@ Task<Dictionary<string, PythonExecutionResult>> InstallPackagesAsync(
 Task<Dictionary<string, PythonExecutionResult>> UninstallPackagesAsync(
     IEnumerable<string> packages,
     bool parallel = false,
-    bool removeDependencies = false,
+    bool useUv = true,
     CancellationToken cancellationToken = default)
 ```
 
@@ -477,29 +496,9 @@ Task<Dictionary<string, PythonExecutionResult>> UninstallPackagesAsync(
 
 ### Requirements Export Methods
 
-#### ExportRequirementsAsync
+#### ExportRequirementsAsync / ExportRequirementsFreezeAsync / ExportRequirementsFreezeToStringAsync
 
-```csharp
-Task<PythonExecutionResult> ExportRequirementsAsync(string outputPath, CancellationToken cancellationToken = default)
-```
-
-**Purpose**: Exports installed packages to a requirements.txt file (with version constraints)
-
-#### ExportRequirementsFreezeAsync
-
-```csharp
-Task<PythonExecutionResult> ExportRequirementsFreezeAsync(string outputPath, CancellationToken cancellationToken = default)
-```
-
-**Purpose**: Exports installed packages to a requirements.txt file with exact versions (pip freeze)
-
-#### ExportRequirementsFreezeToStringAsync
-
-```csharp
-Task<string> ExportRequirementsFreezeToStringAsync(CancellationToken cancellationToken = default)
-```
-
-**Returns**: Requirements.txt content as a string (pip freeze output)
+All accept `bool useUv = true`. Write or return `pip freeze` output (exact pinned versions).
 
 ### Pip Configuration Methods
 
@@ -628,7 +627,7 @@ static bool ValidatePackageSpecification(string packageSpec)
 
 ## BasePythonRootRuntime
 
-**Purpose**: Extends `BasePythonRuntime` with virtual environment management capabilities. Virtual environments are created using `uv`, which is significantly faster than `python -m venv`.
+**Purpose**: Extends `BasePythonRuntime` with virtual environment management. Default: `uv venv`; `useUv: false` uses `python -m venv`.
 
 ### Virtual Environment Methods
 
@@ -639,15 +638,17 @@ Task<BasePythonVirtualRuntime> GetOrCreateVirtualEnvironmentAsync(
     string name,
     bool recreateIfExists = false,
     string? externalPath = null,
+    bool useUv = true,
     CancellationToken cancellationToken = default)
 ```
 
-**Purpose**: Gets or creates a virtual environment using `uv`
+**Purpose**: Gets or creates a virtual environment
 
 **Parameters**:
 - `name`: Name of the virtual environment
 - `recreateIfExists`: Whether to recreate if it already exists
 - `externalPath`: Optional external path where the venv should be created. If null, uses default location within instance directory.
+- `useUv`: When `true` (default), `uv venv` + ensure uv on runtime; when `false`, `python -m venv`
 
 **Returns**: `BasePythonVirtualRuntime` instance
 
@@ -742,10 +743,11 @@ VirtualEnvironmentMetadata? GetVirtualEnvironmentMetadata(string name)
 Task<BasePythonVirtualRuntime> CloneVirtualEnvironmentAsync(
     string sourceName,
     string targetName,
+    bool useUv = true,
     CancellationToken cancellationToken = default)
 ```
 
-**Purpose**: Clones a virtual environment with all packages and configuration
+**Purpose**: Clones a virtual environment with all packages and configuration. When `useUv` is `true`, ensures uv on the cloned runtime.
 
 **Throws**: `InvalidOperationException` if target already exists
 
@@ -770,10 +772,11 @@ Task<string> ExportVirtualEnvironmentAsync(
 Task<BasePythonVirtualRuntime> ImportVirtualEnvironmentAsync(
     string name,
     string archivePath,
+    bool useUv = true,
     CancellationToken cancellationToken = default)
 ```
 
-**Purpose**: Imports virtual environment from an archive
+**Purpose**: Imports virtual environment from an archive. When `useUv` is `true`, ensures uv on the imported runtime.
 
 **Throws**: `InvalidOperationException` if virtual environment already exists
 
@@ -825,6 +828,19 @@ public record OutdatedPackageInfo(
 ```
 
 **Purpose**: Information about a package with available updates
+
+### RequirementStatus
+
+```csharp
+public record RequirementStatus(
+    string PackageSpecification,
+    bool IsInstalled,
+    bool MeetsRequirement,
+    string? InstalledVersion = null,
+    string? RequiredVersion = null)
+```
+
+**Purpose**: Per-line result from `CheckRequirementsAsync`
 
 ### PyPIPackageInfo
 
@@ -1141,10 +1157,12 @@ catch (PackageInstallationException ex)
 
 10. **Batch Operations**: `InstallPackagesAsync` and `UninstallPackagesAsync` support parallel execution, but failures are captured in the result dictionary rather than throwing immediately.
 
-11. **Package Manager (uv)**: All package operations use `uv` instead of pip for significantly faster performance. `uv` is automatically installed when runtime instances are created.
+11. **Package manager (`useUv`)**: Default is uv (`useUv: true`). Pass `useUv: false` for pip/venv. Virtual envs use uv from `pyvenv.cfg` base interpreter when not adjacent to venv Python.
 
 12. **External Virtual Environments**: Virtual environments can be created at custom locations using `externalPath`. The metadata is stored centrally in `InstanceMetadata.VirtualEnvironments`, and the venv is tracked by name regardless of physical location.
 
 13. **Duplicate Venv Names**: Virtual environment names must be unique per runtime instance, even if one is at an external location. Creating a venv with a name that already exists will throw `InvalidOperationException` unless `recreateIfExists` is true.
+
+14. **Requirements checking**: `CheckRequirementsAsync` validates a requirements file without installing; `GetMissingPackagesAsync` checks importability by module name.
 
 

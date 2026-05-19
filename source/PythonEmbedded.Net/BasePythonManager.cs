@@ -82,6 +82,7 @@ public abstract class BasePythonManager
     public async Task<BasePythonRuntime> GetOrCreateInstanceAsync(
         string? pythonVersion = null,
         DateTime? buildDate = null,
+        bool useUv = true,
         CancellationToken cancellationToken = default)
     {
         // Use default version from configuration if not specified
@@ -296,8 +297,9 @@ public abstract class BasePythonManager
         // use the instance 
         BasePythonRuntime runtime = GetPythonRuntimeForInstance(instance!);
         
-        // Ensure uv is installed on the runtime
-        await runtime.EnsureUvInstalledAsync(cancellationToken).ConfigureAwait(false);
+        // Ensure uv is installed on the runtime when using uv-based workflows
+        if (useUv)
+            await runtime.EnsureUvInstalledAsync(cancellationToken).ConfigureAwait(false);
         
         return runtime;
     }
@@ -388,9 +390,10 @@ public abstract class BasePythonManager
 
     public BasePythonRuntime GetOrCreateInstance(
         string pythonVersion,
-        DateTime? buildDate = null)
+        DateTime? buildDate = null,
+        bool useUv = true)
     {
-        Task<BasePythonRuntime> task = GetOrCreateInstanceAsync(pythonVersion, buildDate);
+        Task<BasePythonRuntime> task = GetOrCreateInstanceAsync(pythonVersion, buildDate, useUv);
         task.Wait(cancellationToken: default);
         return task.Result;
     }
@@ -603,22 +606,24 @@ public abstract class BasePythonManager
     /// </summary>
     /// <param name="pythonVersion">The Python version to ensure.</param>
     /// <param name="buildDate">The build date (optional, uses latest if not specified).</param>
+    /// <param name="useUv">When true (default), ensures uv is installed on the runtime.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The Python runtime instance.</returns>
     public async Task<BasePythonRuntime> EnsurePythonVersionAsync(
         string pythonVersion,
         DateTime? buildDate = null,
+        bool useUv = true,
         CancellationToken cancellationToken = default)
     {
-        return await GetOrCreateInstanceAsync(pythonVersion, buildDate, cancellationToken).ConfigureAwait(false);
+        return await GetOrCreateInstanceAsync(pythonVersion, buildDate, useUv, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
     /// Ensures that a specific Python version is available (synchronous version).
     /// </summary>
-    public BasePythonRuntime EnsurePythonVersion(string pythonVersion, DateTime? buildDate = null)
+    public BasePythonRuntime EnsurePythonVersion(string pythonVersion, DateTime? buildDate = null, bool useUv = true)
     {
-        Task<BasePythonRuntime> task = EnsurePythonVersionAsync(pythonVersion, buildDate);
+        Task<BasePythonRuntime> task = EnsurePythonVersionAsync(pythonVersion, buildDate, useUv);
         task.Wait();
         return task.Result;
     }

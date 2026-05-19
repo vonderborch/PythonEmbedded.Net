@@ -1,11 +1,12 @@
 # Quick Reference
 
-A quick reference guide for PythonEmbedded.Net common operations and patterns.
+A quick reference guide for PythonEmbedded.Net **1.4.x** (**.NET 9** / **.NET 10**).
 
 ## Table of Contents
 
 - [Setup](#setup)
 - [Common Operations](#common-operations)
+- [Package Manager (uv vs pip)](#package-manager-uv-vs-pip)
 - [Code Snippets](#code-snippets)
 - [Method Signatures](#method-signatures)
 
@@ -41,6 +42,18 @@ var manager = new PythonManager(
     cache: memoryCache); // Optional: caches GitHub API responses
 ```
 
+### With Custom uv Path
+
+```csharp
+var manager = new PythonManager(
+    "./python-instances",
+    githubClient,
+    configuration: new ManagerConfiguration
+    {
+        UvPath = "/usr/local/bin/uv" // Optional; auto-detected if null
+    });
+```
+
 ### With GitHub Authentication
 
 ```csharp
@@ -55,7 +68,11 @@ var githubClient = new GitHubClient(new ProductHeaderValue("MyApp"))
 ### Get Python Instance
 
 ```csharp
+// useUv: true (default) — installs/detects uv on the instance
 var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
+
+// Pip-only workflow — skip uv installation on the instance
+var pipRuntime = await manager.GetOrCreateInstanceAsync("3.12.0", useUv: false);
 ```
 
 ### Execute Command
@@ -68,22 +85,29 @@ Console.WriteLine(result.StandardOutput);
 ### Install Package
 
 ```csharp
-// Uses uv for fast package installation
+// Default: uv pip install
 await runtime.InstallPackageAsync("numpy");
+
+// Pip fallback
+await runtime.InstallPackageAsync("numpy", useUv: false);
 ```
 
 ### Create Virtual Environment
 
 ```csharp
-var rootRuntime = (IPythonRootRuntime)runtime;
-// Uses uv for fast venv creation
+var rootRuntime = (BasePythonRootRuntime)runtime;
+
+// Default: uv venv (fast)
 var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync("myenv");
+
+// Standard library venv + pip
+var pipVenv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync("legacy", useUv: false);
 ```
 
 ### Create External Virtual Environment
 
 ```csharp
-var rootRuntime = (IPythonRootRuntime)runtime;
+var rootRuntime = (BasePythonRootRuntime)runtime;
 var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync(
     "projectenv",
     externalPath: "/path/to/project/.venv");
@@ -93,6 +117,7 @@ var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync(
 
 ```csharp
 await venv.InstallPackageAsync("pandas");
+// uv venvs resolve uv via pyvenv.cfg → base interpreter; packages use --python <venv>
 ```
 
 ### Execute in Virtual Environment
@@ -110,6 +135,7 @@ var instances = manager.ListInstances();
 ### List Virtual Environments
 
 ```csharp
+var rootRuntime = (BasePythonRootRuntime)runtime;
 var venvNames = rootRuntime.ListVirtualEnvironments();
 ```
 
@@ -125,6 +151,19 @@ await manager.DeleteInstanceAsync("3.12.0");
 await rootRuntime.DeleteVirtualEnvironmentAsync("myenv");
 ```
 
+## Package Manager (uv vs pip)
+
+| API | Default (`useUv: true`) | Pip fallback (`useUv: false`) |
+|-----|-------------------------|-------------------------------|
+| `GetOrCreateInstanceAsync` | Ensures uv on instance | No uv install |
+| `GetOrCreateVirtualEnvironmentAsync` | `uv venv` | `python -m venv` |
+| `InstallPackageAsync` | `uv pip install` | `python -m pip install` |
+| `ListInstalledPackagesAsync` | `uv pip list` | `python -m pip list` |
+
+**Properties:** `runtime.UvPath`, `runtime.IsUvAvailable` (not `UvExecutablePath`).
+
+**Virtual envs:** After `uv venv`, the venv runtime shares the root’s uv via `pyvenv.cfg` (`home =` base interpreter).
+
 ## Code Snippets
 
 ### Complete Setup and Usage
@@ -133,14 +172,10 @@ await rootRuntime.DeleteVirtualEnvironmentAsync("myenv");
 using PythonEmbedded.Net;
 using Octokit;
 
-// Setup
 var githubClient = new GitHubClient(new ProductHeaderValue("MyApp"));
 var manager = new PythonManager("./python-instances", githubClient);
 
-// Get Python
 var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
-
-// Execute
 var result = await runtime.ExecuteCommandAsync("print('Hello, World!')");
 Console.WriteLine(result.StandardOutput);
 ```
@@ -148,20 +183,26 @@ Console.WriteLine(result.StandardOutput);
 ### Virtual Environment Workflow
 
 ```csharp
-// Get runtime
 var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
-var rootRuntime = (IPythonRootRuntime)runtime;
+var rootRuntime = (BasePythonRootRuntime)runtime;
 
-// Create venv
 var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync("myproject");
 
-// Install packages
 await venv.InstallPackageAsync("requests");
 await venv.InstallPackageAsync("pandas");
 
-// Use venv
 var result = await venv.ExecuteCommandAsync(
     "import requests, pandas; print('Success')");
+```
+
+### Pip-Only Workflow
+
+```csharp
+var runtime = await manager.GetOrCreateInstanceAsync("3.12.0", useUv: false);
+var root = (BasePythonRootRuntime)runtime;
+var venv = await root.GetOrCreateVirtualEnvironmentAsync("pip-env", useUv: false);
+
+await venv.InstallPackageAsync("six==1.16.0", useUv: false);
 ```
 
 ### Error Handling Pattern
@@ -186,25 +227,25 @@ catch (PackageInstallationException ex)
 ### Dependency Injection Pattern
 
 ```csharp
-// Registration
-services.AddSingleton<IPythonManager>(sp =>
+// Registration — use concrete or abstract manager type
+services.AddSingleton<PythonManager>(sp =>
 {
     var githubClient = sp.GetRequiredService<GitHubClient>();
     var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
-    return new PythonManager("./instances", githubClient, 
+    return new PythonManager("./instances", githubClient,
         loggerFactory.CreateLogger<PythonManager>(), loggerFactory);
 });
 
 // Usage
 public class MyService
 {
-    private readonly IPythonManager _pythonManager;
-    
-    public MyService(IPythonManager pythonManager)
+    private readonly PythonManager _pythonManager;
+
+    public MyService(PythonManager pythonManager)
     {
         _pythonManager = pythonManager;
     }
-    
+
     public async Task<string> ExecutePythonAsync(string code)
     {
         var runtime = await _pythonManager.GetOrCreateInstanceAsync("3.12.0");
@@ -257,41 +298,62 @@ var result = await runtime.ExecuteCommandAsync(
 
 ## Method Signatures
 
-### IPythonManager
+Public APIs use **abstract base classes**, not `IPython*` interfaces.
+
+### BasePythonManager
 
 ```csharp
-// pythonVersion is now optional - uses default from configuration or "3.12" if null
-Task<IPythonRuntime> GetOrCreateInstanceAsync(string? pythonVersion = null, DateTime? buildDate = null, CancellationToken cancellationToken = default)
-IPythonRuntime GetOrCreateInstance(string? pythonVersion = null, DateTime? buildDate = null)
+Task<BasePythonRuntime> GetOrCreateInstanceAsync(
+    string? pythonVersion = null,
+    DateTime? buildDate = null,
+    bool useUv = true,
+    CancellationToken cancellationToken = default)
+
+BasePythonRuntime GetOrCreateInstance(
+    string pythonVersion,
+    DateTime? buildDate = null,
+    bool useUv = true)
+
 Task<bool> DeleteInstanceAsync(string pythonVersion, DateTime? buildDate = null, CancellationToken cancellationToken = default)
 bool DeleteInstance(string pythonVersion, DateTime? buildDate = null)
 IReadOnlyList<InstanceMetadata> ListInstances()
 Task<IReadOnlyList<string>> ListAvailableVersionsAsync(string? releaseTag = null, CancellationToken cancellationToken = default)
 IReadOnlyList<string> ListAvailableVersions(string? releaseTag = null)
+
+abstract BasePythonRuntime GetPythonRuntimeForInstance(InstanceMetadata instanceMetadata)
 ```
 
-### IPythonRuntime
+### BasePythonRuntime
 
 ```csharp
-Task<PythonExecutionResult> ExecuteCommandAsync(string command, Func<string?>? stdinHandler = null, Action<string>? stdoutHandler = null, Action<string>? stderrHandler = null, CancellationToken cancellationToken = default)
-PythonExecutionResult ExecuteCommand(string command, Func<string?>? stdinHandler = null, Action<string>? stdoutHandler = null, Action<string>? stderrHandler = null)
-Task<PythonExecutionResult> ExecuteScriptAsync(string scriptPath, IEnumerable<string>? arguments = null, Func<string?>? stdinHandler = null, Action<string>? stdoutHandler = null, Action<string>? stderrHandler = null, CancellationToken cancellationToken = default)
-PythonExecutionResult ExecuteScript(string scriptPath, IEnumerable<string>? arguments = null, Func<string?>? stdinHandler = null, Action<string>? stdoutHandler = null, Action<string>? stderrHandler = null)
-Task<PythonExecutionResult> InstallPackageAsync(string packageSpecification, bool upgrade = false, CancellationToken cancellationToken = default)
-PythonExecutionResult InstallPackage(string packageSpecification, bool upgrade = false)
-Task<PythonExecutionResult> InstallRequirementsAsync(string requirementsFilePath, bool upgrade = false, CancellationToken cancellationToken = default)
-PythonExecutionResult InstallRequirements(string requirementsFilePath, bool upgrade = false)
-Task<PythonExecutionResult> InstallPyProjectAsync(string pyProjectFilePath, bool editable = false, CancellationToken cancellationToken = default)
-PythonExecutionResult InstallPyProject(string pyProjectFilePath, bool editable = false)
+string? UvPath { get; }
+bool IsUvAvailable { get; }
+
+Task<PythonExecutionResult> ExecuteCommandAsync(...)
+Task<PythonExecutionResult> InstallPackageAsync(string packageSpecification, bool upgrade = false, string? indexUrl = null, bool useUv = true, CancellationToken cancellationToken = default)
+Task<PythonExecutionResult> InstallRequirementsAsync(string requirementsFilePath, bool upgrade = false, bool useUv = true, CancellationToken cancellationToken = default)
+Task<PythonExecutionResult> InstallPyProjectAsync(string pyProjectFilePath, bool editable = false, bool useUv = true, CancellationToken cancellationToken = default)
+Task<IReadOnlyList<PackageInfo>> ListInstalledPackagesAsync(bool useUv = true, CancellationToken cancellationToken = default)
+// ... additional package APIs accept useUv (default true)
 ```
 
-### IPythonRootRuntime (extends IPythonRuntime)
+### BasePythonRootRuntime (extends BasePythonRuntime)
 
 ```csharp
-Task<IPythonVirtualRuntime> GetOrCreateVirtualEnvironmentAsync(string name, bool recreateIfExists = false, string? externalPath = null, CancellationToken cancellationToken = default)
-IPythonVirtualRuntime GetOrCreateVirtualEnvironment(string name, bool recreateIfExists = false, string? externalPath = null)
+Task<BasePythonVirtualRuntime> GetOrCreateVirtualEnvironmentAsync(
+    string name,
+    bool recreateIfExists = false,
+    string? externalPath = null,
+    bool useUv = true,
+    CancellationToken cancellationToken = default)
+
+BasePythonVirtualRuntime GetOrCreateVirtualEnvironment(
+    string name,
+    bool recreateIfExists = false,
+    string? externalPath = null,
+    bool useUv = true)
+
 Task<bool> DeleteVirtualEnvironmentAsync(string name, CancellationToken cancellationToken = default, bool deleteExternalFiles = true)
-bool DeleteVirtualEnvironment(string name, bool deleteExternalFiles = true)
 IReadOnlyList<string> ListVirtualEnvironments()
 bool VirtualEnvironmentExists(string name)
 string ResolveVirtualEnvironmentPath(string name)
@@ -320,10 +382,8 @@ public record PythonExecutionResult(
 
 - **Full version**: `"3.12.0"` - Matches exactly this version
 - **Partial version**: `"3.12"` - Finds the latest patch version (e.g., "3.12.19")
-  - Works for both local instances and when downloading from GitHub
-  - If multiple patch versions exist locally, returns the highest patch version
 - **With build date**: `GetOrCreateInstanceAsync("3.12.0", buildDate: new DateTime(2024, 1, 15))`
-  - `buildDate` is now `DateTime?` (was `string?` in older versions)
+  - `buildDate` is `DateTime?`
   - If specified, finds the first release on or after this date
   - If null, uses the latest available release
 
@@ -333,4 +393,4 @@ public record PythonExecutionResult(
 - [API Reference](API-Reference.md) - Complete API documentation
 - [Examples](Examples.md) - Comprehensive examples
 - [Error Handling](Error-Handling.md) - Exception reference
-
+- [Architecture](Architecture.md) - Class hierarchy and uv/pip design

@@ -64,6 +64,14 @@ public bool UseExponentialBackoff { get; set; }
 
 Gets or sets whether to use exponential backoff for retries. Default: true.
 
+### UvPath
+
+```csharp
+public string? UvPath { get; set; }
+```
+
+Optional custom path to the `uv` executable. When null, uv is auto-detected from the Python installation, common install locations, and `PATH`. Used when package operations run with `useUv: true` (the default).
+
 ## Usage
 
 ManagerConfiguration is used to configure [BasePythonManager](../Managers/BasePythonManager.md) instances.

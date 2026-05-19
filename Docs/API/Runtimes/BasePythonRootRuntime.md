@@ -42,6 +42,7 @@ public async Task<BasePythonVirtualRuntime> GetOrCreateVirtualEnvironmentAsync(
     string name,
     bool recreateIfExists = false,
     string? externalPath = null,
+    bool useUv = true,
     CancellationToken cancellationToken = default)
 ```
 
@@ -51,6 +52,7 @@ Gets or creates a virtual environment with the specified name.
 - `name` - The name of the virtual environment
 - `recreateIfExists` - Whether to recreate the virtual environment if it already exists
 - `externalPath` - Optional external path where the venv should be created. If null, uses default location within the instance directory
+- `useUv` - When `true` (default), `uv venv` and ensure uv on the runtime; when `false`, `python -m venv`
 - `cancellationToken` - Cancellation token
 
 **Returns:**
@@ -83,7 +85,8 @@ var freshVenv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync(
 public BasePythonVirtualRuntime GetOrCreateVirtualEnvironment(
     string name,
     bool recreateIfExists = false,
-    string? externalPath = null)
+    string? externalPath = null,
+    bool useUv = true)
 ```
 
 Synchronous version of `GetOrCreateVirtualEnvironmentAsync`.
@@ -187,14 +190,16 @@ Gets the metadata for a virtual environment.
 public async Task<BasePythonVirtualRuntime> CloneVirtualEnvironmentAsync(
     string sourceName,
     string targetName,
+    bool useUv = true,
     CancellationToken cancellationToken = default)
 ```
 
-Clones a virtual environment to create a new one with the same packages and configuration.
+Clones a virtual environment to create a new one with the same packages and configuration. When `useUv` is `true`, ensures uv on the cloned runtime.
 
 **Parameters:**
 - `sourceName` - The name of the source virtual environment
 - `targetName` - The name of the target virtual environment
+- `useUv` - When `true` (default), ensures uv on the returned runtime
 - `cancellationToken` - Cancellation token
 
 **Returns:**
@@ -228,14 +233,16 @@ Exports a virtual environment to an archive file.
 public async Task<BasePythonVirtualRuntime> ImportVirtualEnvironmentAsync(
     string name,
     string archivePath,
+    bool useUv = true,
     CancellationToken cancellationToken = default)
 ```
 
-Imports a virtual environment from an archive file.
+Imports a virtual environment from an archive file. When `useUv` is `true`, ensures uv on the imported runtime.
 
 **Parameters:**
 - `name` - The name for the imported virtual environment
 - `archivePath` - The path to the archive file to import
+- `useUv` - When `true` (default), ensures uv on the returned runtime
 - `cancellationToken` - Cancellation token
 
 **Returns:**
@@ -296,10 +303,11 @@ Saves the instance metadata to disk. Called internally after modifying virtual e
 ```csharp
 protected virtual async Task CreateVirtualEnvironmentAsync(
     string venvPath,
+    bool useUv = true,
     CancellationToken cancellationToken = default)
 ```
 
-Creates a virtual environment at the specified path using `uv` (significantly faster than `python -m venv`).
+Creates a virtual environment at the specified path. When `useUv` is `true`, runs `uv venv`; otherwise `python -m venv`.
 
 ## Protected Abstract Methods
 
@@ -313,7 +321,7 @@ Creates a virtual runtime instance for the specified virtual environment path. M
 
 ## Package Manager
 
-Virtual environments are created using [uv](https://github.com/astral-sh/uv), a fast Python package installer and resolver. `uv` is automatically installed when the runtime instance is created.
+Default venv creation uses [uv](https://github.com/astral-sh/uv) (`useUv: true`). Pass `useUv: false` for `python -m venv` (includes pip in the venv). `BasePythonVirtualRuntime` resolves uv from the venv's `pyvenv.cfg` base interpreter when uv is not adjacent to the venv Python executable.
 
 ## External Virtual Environments
 

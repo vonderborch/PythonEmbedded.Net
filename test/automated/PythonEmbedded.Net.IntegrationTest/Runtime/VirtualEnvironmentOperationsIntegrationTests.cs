@@ -240,5 +240,32 @@ public class VirtualEnvironmentOperationsIntegrationTests
         Assert.That(_runtime!.IsUvAvailable, Is.True);
         Assert.That(_runtime.UvPath, Is.Not.Null.And.Not.Empty);
     }
+
+    [Test]
+    [Category("Integration")]
+    public async Task UvIsAvailable_AfterVirtualEnvironmentCreation_ReturnsTrue()
+    {
+        Assume.That(_runtime, Is.Not.Null);
+
+        var venv = await _runtime!.GetOrCreateVirtualEnvironmentAsync($"uv-test-{Guid.NewGuid():N}");
+
+        Assert.That(venv.IsUvAvailable, Is.True);
+        Assert.That(venv.UvPath, Is.Not.Null.And.Not.Empty);
+    }
+
+    [Test]
+    [Category("Integration")]
+    public async Task GetOrCreateVirtualEnvironment_WithUseUvFalse_CreatesVenvWithPip()
+    {
+        Assume.That(_runtime, Is.Not.Null);
+
+        var venvName = $"pip-venv-{Guid.NewGuid():N}";
+        var venv = await _runtime!.GetOrCreateVirtualEnvironmentAsync(venvName, useUv: false);
+
+        Assert.That(venv, Is.Not.Null);
+        var installResult = await venv.InstallPackageAsync("six==1.16.0", useUv: false);
+        Assert.That(installResult.ExitCode, Is.EqualTo(0));
+        Assert.That(await venv.IsPackageInstalledAsync("six", useUv: false), Is.True);
+    }
 }
 

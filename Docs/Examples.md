@@ -1,11 +1,12 @@
 # Examples
 
-This document provides comprehensive examples for using PythonEmbedded.Net.
+This document provides comprehensive examples for using PythonEmbedded.Net **1.4.x** (**.NET 9** / **.NET 10**).
 
 ## Table of Contents
 
 - [Basic Usage](#basic-usage)
 - [Virtual Environments](#virtual-environments)
+- [Package Manager (uv vs pip)](#package-manager-uv-vs-pip)
 - [Package Management](#package-management)
 - [Script Execution](#script-execution)
 - [Input/Output Handling](#inputoutput-handling)
@@ -68,7 +69,7 @@ Virtual environments are created using [uv](https://github.com/astral-sh/uv), wh
 
 ```csharp
 var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
-var rootRuntime = (IPythonRootRuntime)runtime;
+var rootRuntime = (BasePythonRootRuntime)runtime;
 
 // Create a virtual environment (uses uv for fast creation)
 var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync("myproject");
@@ -88,7 +89,7 @@ Console.WriteLine(result.StandardOutput);
 You can create virtual environments at custom locations outside the default instance directory:
 
 ```csharp
-var rootRuntime = (IPythonRootRuntime)runtime;
+var rootRuntime = (BasePythonRootRuntime)runtime;
 
 // Create venv at a project-specific location
 var projectVenv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync(
@@ -108,7 +109,7 @@ Console.WriteLine($"External path: {info["ExternalPath"]}"); // /path/to/myproje
 ### Listing Virtual Environments
 
 ```csharp
-var rootRuntime = (IPythonRootRuntime)runtime;
+var rootRuntime = (BasePythonRootRuntime)runtime;
 var venvNames = rootRuntime.ListVirtualEnvironments();
 
 foreach (var name in venvNames)
@@ -123,7 +124,7 @@ foreach (var name in venvNames)
 ### Checking if Virtual Environment Exists
 
 ```csharp
-var rootRuntime = (IPythonRootRuntime)runtime;
+var rootRuntime = (BasePythonRootRuntime)runtime;
 
 // Check if a venv exists (works for both standard and external venvs)
 if (rootRuntime.VirtualEnvironmentExists("myproject"))
@@ -178,17 +179,62 @@ var exportPath = await rootRuntime.ExportVirtualEnvironmentAsync("myproject", ".
 var importedVenv = await rootRuntime.ImportVirtualEnvironmentAsync("restored_project", "./backups/myproject_venv.zip");
 ```
 
+## Package Manager (uv vs pip)
+
+By default, PythonEmbedded.Net uses [uv](https://github.com/astral-sh/uv) for virtual environments and package operations. Pass **`useUv: false`** to use the standard library `venv` module and `python -m pip` instead.
+
+### Default (uv) Instance and Venv
+
+```csharp
+// Installs/detects uv on the root runtime (default)
+var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
+Console.WriteLine($"uv: {runtime.UvPath}");
+
+var root = (BasePythonRootRuntime)runtime;
+var venv = await root.GetOrCreateVirtualEnvironmentAsync("uv-project");
+await venv.InstallPackageAsync("requests");
+```
+
+`uv venv` does not place `uv` inside the venv. The venv runtime resolves uv from the base interpreter via **`pyvenv.cfg`** (`home = ...`) and runs `uv pip ... --python <venv-python>`.
+
+### Pip / venv Fallback
+
+```csharp
+var runtime = await manager.GetOrCreateInstanceAsync("3.12.0", useUv: false);
+var root = (BasePythonRootRuntime)runtime;
+
+var venv = await root.GetOrCreateVirtualEnvironmentAsync("pip-project", useUv: false);
+await venv.InstallPackageAsync("six==1.16.0", useUv: false);
+
+var packages = await venv.ListInstalledPackagesAsync(useUv: false);
+```
+
+### Custom uv Path (Manager Configuration)
+
+```csharp
+var manager = new PythonManager(
+    "./python-instances",
+    githubClient,
+    configuration: new ManagerConfiguration
+    {
+        UvPath = "/opt/homebrew/bin/uv"
+    });
+```
+
 ## Package Management
 
-All package operations use [uv](https://github.com/astral-sh/uv), which provides significantly faster package installation and resolution compared to pip. `uv` is automatically installed when runtime instances are created.
+By default, package operations use [uv](https://github.com/astral-sh/uv) (`uv pip`), which is significantly faster than pip alone. `uv` is installed/detected when `useUv: true` (the default) on instance creation. Use `useUv: false` for `python -m pip`.
 
 ### Installing Single Packages
 
 ```csharp
 var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
 
-// Install latest version (uses uv)
+// Install latest version (uv pip install — default)
 await runtime.InstallPackageAsync("requests");
+
+// Same package via pip
+await runtime.InstallPackageAsync("requests", useUv: false);
 
 // Install specific version
 await runtime.InstallPackageAsync("requests==2.31.0");
@@ -238,7 +284,7 @@ await runtime.InstallPyProjectAsync("./my-python-project", editable: true);
 
 ```csharp
 var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
-var rootRuntime = (IPythonRootRuntime)runtime;
+var rootRuntime = (BasePythonRootRuntime)runtime;
 
 var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync("myproject");
 
@@ -421,7 +467,7 @@ catch (InstanceNotFoundException ex)
 ### Checking for Virtual Environment
 
 ```csharp
-var rootRuntime = (IPythonRootRuntime)runtime;
+var rootRuntime = (BasePythonRootRuntime)runtime;
 
 try
 {
@@ -450,7 +496,7 @@ services.AddSingleton<GitHubClient>(sp =>
     };
 });
 
-services.AddSingleton<IPythonManager>(sp =>
+services.AddSingleton<PythonManager>(sp =>
 {
     var githubClient = sp.GetRequiredService<GitHubClient>();
     var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
@@ -468,9 +514,9 @@ services.AddSingleton<IPythonManager>(sp =>
 // In a service
 public class MyService
 {
-    private readonly IPythonManager _pythonManager;
+    private readonly PythonManager _pythonManager;
     
-    public MyService(IPythonManager pythonManager)
+    public MyService(PythonManager pythonManager)
     {
         _pythonManager = pythonManager;
     }
@@ -580,7 +626,7 @@ foreach (var version in versions)
 ```csharp
 var netManager = new PythonNetManager("./python-instances", githubClient);
 
-IPythonRuntime runtime = null;
+BasePythonRuntime? runtime = null;
 try
 {
     runtime = await netManager.GetOrCreateInstanceAsync("3.12.0");
@@ -620,11 +666,11 @@ if (runtime is IDisposable disposable)
 ```csharp
 public class PythonScriptRunner
 {
-    private readonly IPythonManager _pythonManager;
+    private readonly PythonManager _pythonManager;
     private readonly ILogger<PythonScriptRunner> _logger;
     
     public PythonScriptRunner(
-        IPythonManager pythonManager,
+        PythonManager pythonManager,
         ILogger<PythonScriptRunner> logger)
     {
         _pythonManager = pythonManager;
@@ -669,12 +715,12 @@ public class ScriptExecutionResult
 ### Isolated Package Installation
 
 ```csharp
-public async Task<IPythonVirtualRuntime> SetupProjectEnvironmentAsync(
+public async Task<BasePythonVirtualRuntime> SetupProjectEnvironmentAsync(
     string projectName,
     string requirementsPath)
 {
     var runtime = await _pythonManager.GetOrCreateInstanceAsync("3.12.0");
-    var rootRuntime = (IPythonRootRuntime)runtime;
+    var rootRuntime = (BasePythonRootRuntime)runtime;
     
     // Create isolated virtual environment
     var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync(

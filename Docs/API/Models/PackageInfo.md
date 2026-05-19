@@ -60,6 +60,29 @@ foreach (var package in outdated)
 }
 ```
 
+## RequirementStatus
+
+Represents the status of a single entry from a requirements file, returned by `CheckRequirementsAsync`.
+
+```csharp
+public record RequirementStatus(
+    string PackageSpecification,
+    bool IsInstalled,
+    bool MeetsRequirement,
+    string? InstalledVersion = null,
+    string? RequiredVersion = null)
+```
+
+**Example:**
+
+```csharp
+var statuses = await runtime.CheckRequirementsAsync("requirements.txt");
+foreach (var status in statuses)
+{
+    Console.WriteLine($"{status.PackageSpecification}: installed={status.IsInstalled}, meets={status.MeetsRequirement}");
+}
+```
+
 ## Related Types
 
 - [BasePythonRuntime](../Runtimes/BasePythonRuntime.md) - Uses PackageInfo for package management

@@ -18,37 +18,27 @@ BasePythonRuntime (abstract)
     └── PythonNetVirtualEnvironment
 ```
 
-## Package Manager (uv)
+## Package Manager (uv and pip)
 
-This library uses [uv](https://github.com/astral-sh/uv) as its package manager, which provides significantly faster package operations compared to pip. `uv` is automatically installed when runtime instances and virtual environments are created.
+By default, package operations use [uv](https://github.com/astral-sh/uv) (`useUv: true`). Pass `useUv: false` to use `python -m pip`. When `useUv` is `true` on manager/root creation, `EnsureUvInstalledAsync` runs on the runtime.
+
+**uv detection order:** executable adjacent to this runtime's Python → `GetAdditionalUvCandidatePaths()` (for venvs: `pyvenv.cfg` `home =` base interpreter paths) → common install dirs → `PATH`.
 
 ### uv Properties
 
 ```csharp
 public bool IsUvAvailable { get; }
+public string? UvPath { get; }
 ```
-
-Gets whether `uv` is available and ready to use.
-
-```csharp
-public string? UvExecutablePath { get; }
-```
-
-Gets the path to the `uv` executable, or null if not available.
 
 ### uv Methods
 
 ```csharp
-public async Task DetectUvAsync(CancellationToken cancellationToken = default)
+public async Task<bool> DetectUvAsync(string? customPath = null, CancellationToken cancellationToken = default)
+public async Task<bool> EnsureUvInstalledAsync(CancellationToken cancellationToken = default)
 ```
 
-Detects if `uv` is available (checks both PATH and local installation).
-
-```csharp
-public async Task EnsureUvInstalledAsync(CancellationToken cancellationToken = default)
-```
-
-Ensures `uv` is installed, installing it if necessary. This is called automatically when runtime instances are created.
+`EnsureUvInstalledAsync` attempts `pip install uv` if detection fails, then re-detects.
 
 ## Protected Abstract Properties
 
@@ -180,22 +170,21 @@ public async Task<PythonExecutionResult> InstallPackageAsync(
     string packageSpecification,
     bool upgrade = false,
     string? indexUrl = null,
+    bool useUv = true,
     CancellationToken cancellationToken = default)
 ```
 
-Installs a Python package using `uv`.
+Installs a Python package via uv or pip.
 
 **Parameters:**
 - `packageSpecification` - Package specification (e.g., "requests==2.31.0", "numpy>=1.20.0")
 - `upgrade` - Whether to upgrade the package if already installed
 - `indexUrl` - Optional custom PyPI index URL
+- `useUv` - When `true` (default), uv; when `false`, `python -m pip`
 - `cancellationToken` - Cancellation token
 
-**Returns:**
-- `Task<PythonExecutionResult>` - The execution result from uv
-
 **Exceptions:**
-- `InvalidOperationException` - If uv is not available
+- `InvalidOperationException` - If the selected package manager is not available
 - [PackageInstallationException](../Exceptions/PackageInstallationException.md) - When installation fails
 
 **Example:**
@@ -217,21 +206,34 @@ await runtime.InstallPackageAsync("pandas", upgrade: true);
 public async Task<PythonExecutionResult> InstallRequirementsAsync(
     string requirementsFilePath,
     bool upgrade = false,
+    bool useUv = true,
     CancellationToken cancellationToken = default)
 ```
 
-Installs packages from a requirements.txt file using `uv`.
-
-**Parameters:**
-- `requirementsFilePath` - Path to requirements.txt file
-- `upgrade` - Whether to upgrade packages
-- `cancellationToken` - Cancellation token
-
-**Returns:**
-- `Task<PythonExecutionResult>` - The execution result
+Installs packages from a requirements.txt file.
 
 **Exceptions:**
-- [RequirementsFileException](../Exceptions/RequirementsFileException.md) - When requirements file is invalid
+- [RequirementsFileException](../Exceptions/RequirementsFileException.md) - When installation or parsing fails
+
+### CheckRequirementsAsync
+
+```csharp
+public async Task<IReadOnlyList<RequirementStatus>> CheckRequirementsAsync(
+    string requirementsFilePath,
+    CancellationToken cancellationToken = default)
+```
+
+Checks each requirements line for install/version satisfaction (embedded Python script).
+
+### GetMissingPackagesAsync
+
+```csharp
+public async Task<string[]> GetMissingPackagesAsync(
+    string[] packageNames,
+    CancellationToken cancellationToken = default)
+```
+
+Returns package names not importable via `importlib.util.find_spec` (single Python invocation).
 
 ### InstallPyProjectAsync
 
@@ -239,10 +241,11 @@ Installs packages from a requirements.txt file using `uv`.
 public async Task<PythonExecutionResult> InstallPyProjectAsync(
     string pyProjectFilePath,
     bool editable = false,
+    bool useUv = true,
     CancellationToken cancellationToken = default)
 ```
 
-Installs a Python package from a pyproject.toml file using `uv`.
+Installs a Python package from a pyproject.toml file.
 
 **Parameters:**
 - `pyProjectFilePath` - The path to the directory containing pyproject.toml or the file itself
@@ -257,28 +260,21 @@ Installs a Python package from a pyproject.toml file using `uv`.
 ```csharp
 public async Task<PythonExecutionResult> UninstallPackageAsync(
     string packageName,
-    bool removeDependencies = false,
+    bool useUv = true,
     CancellationToken cancellationToken = default)
 ```
 
-Uninstalls a Python package using `uv`.
-
-**Parameters:**
-- `packageName` - Name of the package to uninstall
-- `removeDependencies` - Whether to also remove dependencies (not used by uv)
-- `cancellationToken` - Cancellation token
-
-**Returns:**
-- `Task<PythonExecutionResult>` - The execution result
+Uninstalls a Python package (`pip uninstall -y`).
 
 ### ListInstalledPackagesAsync
 
 ```csharp
 public async Task<IReadOnlyList<PackageInfo>> ListInstalledPackagesAsync(
+    bool useUv = true,
     CancellationToken cancellationToken = default)
 ```
 
-Lists all installed packages using `uv pip list`.
+Lists all installed packages (`pip list --format=json`).
 
 **Returns:**
 - `Task<IReadOnlyList<PackageInfo>>` - List of installed packages. See [PackageInfo](../Models/PackageInfo.md)
@@ -288,10 +284,11 @@ Lists all installed packages using `uv pip list`.
 ```csharp
 public async Task<string?> GetPackageVersionAsync(
     string packageName,
+    bool useUv = true,
     CancellationToken cancellationToken = default)
 ```
 
-Gets the installed version of a package using `importlib.metadata`.
+Gets the installed version via `pip show`.
 
 **Parameters:**
 - `packageName` - Name of the package
@@ -304,10 +301,11 @@ Gets the installed version of a package using `importlib.metadata`.
 ```csharp
 public async Task<bool> IsPackageInstalledAsync(
     string packageName,
+    bool useUv = true,
     CancellationToken cancellationToken = default)
 ```
 
-Checks if a package is installed using `uv pip show`.
+Checks if a package is installed (`pip show` exit code).
 
 **Parameters:**
 - `packageName` - Name of the package
@@ -320,10 +318,11 @@ Checks if a package is installed using `uv pip show`.
 ```csharp
 public async Task<PackageInfo?> GetPackageInfoAsync(
     string packageName,
+    bool useUv = true,
     CancellationToken cancellationToken = default)
 ```
 
-Gets detailed information about an installed package using `importlib.metadata`.
+Gets detailed information about an installed package (parsed from `pip show`).
 
 **Parameters:**
 - `packageName` - Name of the package
@@ -335,10 +334,11 @@ Gets detailed information about an installed package using `importlib.metadata`.
 
 ```csharp
 public async Task<IReadOnlyList<OutdatedPackageInfo>> ListOutdatedPackagesAsync(
+    bool useUv = true,
     CancellationToken cancellationToken = default)
 ```
 
-Lists packages that have available updates using `uv pip list --outdated`.
+Lists packages that have available updates (`pip list --outdated --format=json`). Accepts `bool useUv = true`.
 
 **Returns:**
 - `Task<IReadOnlyList<OutdatedPackageInfo>>` - List of outdated packages
@@ -348,36 +348,15 @@ Lists packages that have available updates using `uv pip list --outdated`.
 ```csharp
 public async Task<PythonExecutionResult> ExportRequirementsAsync(
     string outputPath,
+    bool useUv = true,
     CancellationToken cancellationToken = default)
 ```
 
-Exports installed packages to a requirements.txt file using `uv pip freeze`.
+Writes `pip freeze` output to `outputPath`. Accepts `bool useUv = true`.
 
-**Parameters:**
-- `outputPath` - The path where to write the requirements.txt file
-- `cancellationToken` - Cancellation token
+### ExportRequirementsFreezeAsync / ExportRequirementsFreezeToStringAsync
 
-**Returns:**
-- `Task<PythonExecutionResult>` - The execution result
-
-### ExportRequirementsFreezeAsync
-
-```csharp
-public async Task<PythonExecutionResult> ExportRequirementsFreezeAsync(
-    string outputPath,
-    CancellationToken cancellationToken = default)
-```
-
-Exports installed packages with exact versions to a requirements.txt file using `uv pip freeze`.
-
-### ExportRequirementsFreezeToStringAsync
-
-```csharp
-public async Task<string> ExportRequirementsFreezeToStringAsync(
-    CancellationToken cancellationToken = default)
-```
-
-Exports installed packages as a requirements.txt string using `uv pip freeze`.
+Same freeze output to file or string. Accepts `bool useUv = true`.
 
 **Returns:**
 - `Task<string>` - The requirements.txt content as a string
@@ -389,6 +368,7 @@ public async Task<Dictionary<string, PythonExecutionResult>> InstallPackagesAsyn
     IEnumerable<string> packages,
     bool parallel = false,
     bool upgrade = false,
+    bool useUv = true,
     CancellationToken cancellationToken = default)
 ```
 
@@ -409,7 +389,7 @@ Installs multiple packages in batch.
 public async Task<Dictionary<string, PythonExecutionResult>> UninstallPackagesAsync(
     IEnumerable<string> packages,
     bool parallel = false,
-    bool removeDependencies = false,
+    bool useUv = true,
     CancellationToken cancellationToken = default)
 ```
 
@@ -419,6 +399,7 @@ Uninstalls multiple packages in batch.
 
 ```csharp
 public async Task<PythonExecutionResult> UpgradeAllPackagesAsync(
+    bool useUv = true,
     CancellationToken cancellationToken = default)
 ```
 
@@ -430,6 +411,7 @@ Upgrades all installed packages.
 public async Task<PythonExecutionResult> DowngradePackageAsync(
     string packageName,
     string targetVersion,
+    bool useUv = true,
     CancellationToken cancellationToken = default)
 ```
 
@@ -492,7 +474,7 @@ Performs a comprehensive health check of the Python installation.
   - `ExecutableExists` - Whether the Python executable exists
   - `WorkingDirectoryExists` - Whether the working directory exists
   - `PythonVersionCheck` - Status of Python version check
-  - `UvCheck` - Status of uv availability
+  - `PipCheck` - Status of pip availability
   - `CommandExecution` - Status of command execution test
   - `OverallHealth` - Overall health status ("Healthy" or "Unhealthy")
 

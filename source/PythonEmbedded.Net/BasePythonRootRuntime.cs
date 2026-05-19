@@ -35,12 +35,14 @@ public abstract class BasePythonRootRuntime : BasePythonRuntime
     /// <param name="name">The name of the virtual environment.</param>
     /// <param name="recreateIfExists">Whether to recreate the virtual environment if it already exists.</param>
     /// <param name="externalPath">Optional external path where the venv should be created. If null, uses default location.</param>
+    /// <param name="useUv">When true (default), creates the venv with uv and ensures uv is available; when false, uses <c>python -m venv</c>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The virtual environment runtime.</returns>
     public async Task<BasePythonVirtualRuntime> GetOrCreateVirtualEnvironmentAsync(
         string name,
         bool recreateIfExists = false,
         string? externalPath = null,
+        bool useUv = true,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(name))
@@ -80,8 +82,8 @@ public abstract class BasePythonRootRuntime : BasePythonRuntime
                     $"Use recreateIfExists=true to replace it, or choose a different name.");
             }
 
-            this.Logger?.LogInformation("Creating virtual environment: {Name} at {Path}", name, actualVenvPath);
-            await CreateVirtualEnvironmentAsync(actualVenvPath, cancellationToken).ConfigureAwait(false);
+            this.Logger?.LogInformation("Creating virtual environment: {Name} at {Path} (useUv: {UseUv})", name, actualVenvPath, useUv);
+            await CreateVirtualEnvironmentAsync(actualVenvPath, useUv, cancellationToken).ConfigureAwait(false);
 
             // Create metadata for the venv
             var venvMetadata = new VirtualEnvironmentMetadata
@@ -102,8 +104,9 @@ public abstract class BasePythonRootRuntime : BasePythonRuntime
         // Create the virtual runtime instance
         var venvRuntime = CreateVirtualRuntimeInstance(actualVenvPath);
         
-        // Ensure uv is available in the virtual environment
-        await venvRuntime.EnsureUvInstalledAsync(cancellationToken).ConfigureAwait(false);
+        // Ensure uv is available in the virtual environment when using uv-based workflows
+        if (useUv)
+            await venvRuntime.EnsureUvInstalledAsync(cancellationToken).ConfigureAwait(false);
         
         return venvRuntime;
     }
@@ -114,13 +117,15 @@ public abstract class BasePythonRootRuntime : BasePythonRuntime
     /// <param name="name">The name of the virtual environment.</param>
     /// <param name="recreateIfExists">Whether to recreate the virtual environment if it already exists.</param>
     /// <param name="externalPath">Optional external path where the venv should be created. If null, uses default location.</param>
+    /// <param name="useUv">When true (default), creates the venv with uv and ensures uv is available; when false, uses <c>python -m venv</c>.</param>
     /// <returns>The virtual environment runtime.</returns>
     public BasePythonVirtualRuntime GetOrCreateVirtualEnvironment(
         string name,
         bool recreateIfExists = false,
-        string? externalPath = null)
+        string? externalPath = null,
+        bool useUv = true)
     {
-        Task<BasePythonVirtualRuntime> task = GetOrCreateVirtualEnvironmentAsync(name, recreateIfExists, externalPath);
+        Task<BasePythonVirtualRuntime> task = GetOrCreateVirtualEnvironmentAsync(name, recreateIfExists, externalPath, useUv);
         task.Wait();
         return task.Result;
     }
@@ -309,12 +314,14 @@ public abstract class BasePythonRootRuntime : BasePythonRuntime
     protected abstract BasePythonVirtualRuntime CreateVirtualRuntimeInstance(string venvPath);
 
     /// <summary>
-    /// Creates a virtual environment at the specified path using uv (significantly faster than python -m venv).
+    /// Creates a virtual environment at the specified path using uv or <c>python -m venv</c>.
     /// </summary>
     /// <param name="venvPath">The path where to create the virtual environment.</param>
+    /// <param name="useUv">When true (default), uses <c>uv venv</c>; when false, uses <c>python -m venv</c>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     protected virtual async Task CreateVirtualEnvironmentAsync(
         string venvPath,
+        bool useUv = true,
         CancellationToken cancellationToken = default)
     {
         // Ensure the parent directory exists
@@ -324,13 +331,21 @@ public abstract class BasePythonRootRuntime : BasePythonRuntime
             Directory.CreateDirectory(parentDir);
         }
 
-        // Ensure uv is available (auto-install if needed)
-        await EnsureUvAvailableAsync(cancellationToken).ConfigureAwait(false);
+        this.Logger?.LogInformation("Creating virtual environment at: {Path} (useUv: {UseUv})", venvPath, useUv);
 
-        this.Logger?.LogInformation("Creating virtual environment at: {Path}", venvPath);
+        PythonExecutionResult result;
+        if (useUv)
+        {
+            await EnsureUvAvailableAsync(cancellationToken).ConfigureAwait(false);
 
-        var uvArgs = new List<string> { "venv", venvPath, "--python", PythonExecutablePath };
-        var result = await ExecuteUvAsync(uvArgs, cancellationToken).ConfigureAwait(false);
+            var uvArgs = new List<string> { "venv", venvPath, "--python", PythonExecutablePath };
+            result = await ExecuteUvAsync(uvArgs, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            ValidateInstallation();
+            result = await ExecuteProcessAsync(["-m", "venv", venvPath], null, null, null, cancellationToken, null, null).ConfigureAwait(false);
+        }
 
         if (result.ExitCode != 0)
         {
@@ -480,11 +495,13 @@ public abstract class BasePythonRootRuntime : BasePythonRuntime
     /// </summary>
     /// <param name="sourceName">The name of the source virtual environment.</param>
     /// <param name="targetName">The name of the target virtual environment.</param>
+    /// <param name="useUv">When true (default), ensures uv is available on the cloned venv runtime.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The cloned virtual environment runtime.</returns>
     public async Task<BasePythonVirtualRuntime> CloneVirtualEnvironmentAsync(
         string sourceName,
         string targetName,
+        bool useUv = true,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(sourceName))
@@ -524,9 +541,10 @@ public abstract class BasePythonRootRuntime : BasePythonRuntime
 
             this.Logger?.LogInformation("Successfully cloned virtual environment {Source} to {Target}", sourceName, targetName);
 
-            // Create the virtual runtime instance and ensure uv is available
+            // Create the virtual runtime instance and ensure uv is available when requested
             var venvRuntime = CreateVirtualRuntimeInstance(targetPath);
-            await venvRuntime.EnsureUvInstalledAsync(cancellationToken).ConfigureAwait(false);
+            if (useUv)
+                await venvRuntime.EnsureUvInstalledAsync(cancellationToken).ConfigureAwait(false);
             
             return venvRuntime;
         }
@@ -615,11 +633,13 @@ public abstract class BasePythonRootRuntime : BasePythonRuntime
     /// </summary>
     /// <param name="name">The name for the imported virtual environment.</param>
     /// <param name="archivePath">The path to the archive file to import.</param>
+    /// <param name="useUv">When true (default), ensures uv is available on the imported venv runtime.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The imported virtual environment runtime.</returns>
     public async Task<BasePythonVirtualRuntime> ImportVirtualEnvironmentAsync(
         string name,
         string archivePath,
+        bool useUv = true,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(name))
@@ -663,9 +683,10 @@ public abstract class BasePythonRootRuntime : BasePythonRuntime
 
             this.Logger?.LogInformation("Successfully imported virtual environment {Name} from {Path}", name, archivePath);
 
-            // Create the virtual runtime instance and ensure uv is available
+            // Create the virtual runtime instance and ensure uv is available when requested
             var venvRuntime = CreateVirtualRuntimeInstance(targetPath);
-            await venvRuntime.EnsureUvInstalledAsync(cancellationToken).ConfigureAwait(false);
+            if (useUv)
+                await venvRuntime.EnsureUvInstalledAsync(cancellationToken).ConfigureAwait(false);
             
             return venvRuntime;
         }

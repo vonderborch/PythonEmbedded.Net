@@ -1,6 +1,6 @@
 # Error Handling
 
-This document describes the exception hierarchy and best practices for error handling in PythonEmbedded.Net.
+This document describes the exception hierarchy and best practices for error handling in PythonEmbedded.Net **1.4.x**.
 
 ## Exception Hierarchy
 
@@ -159,7 +159,7 @@ Base exception for package installation failures.
 
 **Properties:**
 - `PackageSpecification` (string?): The package that failed to install
-- `InstallationOutput` (string?): Output from pip installation
+- `InstallationOutput` (string?): Output from the package manager (uv or pip, depending on `useUv`)
 
 **When thrown:**
 - Package installation fails
@@ -322,7 +322,7 @@ Thrown when a virtual environment is not found.
 ```csharp
 try
 {
-    var rootRuntime = (IPythonRootRuntime)runtime;
+    var rootRuntime = (BasePythonRootRuntime)runtime;
     await rootRuntime.DeleteVirtualEnvironmentAsync("nonexistent");
 }
 catch (VirtualEnvironmentNotFoundException ex)
@@ -485,22 +485,32 @@ if (result.ExitCode != 0)
 ### Virtual Environment Creation Failure
 
 ```csharp
+var rootRuntime = (BasePythonRootRuntime)runtime;
+
 try
 {
-    var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync("myenv");
+    var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync("myenv"); // uv venv by default
 }
 catch (PythonInstallationException ex)
 {
+    _logger.LogError(ex, "Venv creation failed");
+
     // Verify Python installation
     var versionResult = await runtime.ExecuteCommandAsync("--version");
     if (versionResult.ExitCode != 0)
     {
-        // Python installation is corrupted
         await manager.DeleteInstanceAsync("3.12.0");
-        var newRuntime = await manager.GetOrCreateInstanceAsync("3.12.0");
+        runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
     }
+
+    // Or retry with pip/venv fallback
+    var pipVenv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync("myenv", useUv: false);
 }
 ```
+
+### uv Not Available
+
+When `useUv: true` (default) and uv cannot be detected or installed, package/venv operations may throw `InvalidOperationException` from internal `EnsureUvAvailableAsync` / `EnsurePackageManagerAvailableAsync` paths. Either install uv (default instance creation calls `EnsureUvInstalledAsync`), set `ManagerConfiguration.UvPath`, or pass **`useUv: false`** for pip-based operations.
 
 ## See Also
 
