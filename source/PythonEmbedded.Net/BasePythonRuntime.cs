@@ -687,6 +687,84 @@ public abstract class BasePythonRuntime
     }
 
     /// <summary>
+    /// Checks what packages from a requirements file are missing or don't meet the version requirements.
+    /// </summary>
+    /// <param name="requirementsFilePath">The path to the requirements.txt file.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A list of requirement statuses for each item in the requirements file.</returns>
+    public async Task<IReadOnlyList<Models.RequirementStatus>> CheckRequirementsAsync(
+        string requirementsFilePath,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(requirementsFilePath))
+            throw new ArgumentException("Requirements file path cannot be null or empty.", nameof(requirementsFilePath));
+
+        if (!File.Exists(requirementsFilePath))
+            throw new FileNotFoundException($"Requirements file not found: {requirementsFilePath}", requirementsFilePath);
+
+        ValidateInstallation();
+
+        this.Logger?.LogInformation("Checking requirements from file: {FilePath}", requirementsFilePath);
+        var script = Constants.RequirementsCheckScript.Replace("{0}", requirementsFilePath);
+        var result = await ExecuteCommandAsync(script, cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        if (result.ExitCode != 0)
+        {
+            throw new RequirementsFileException(
+                $"Failed to check requirements from file '{requirementsFilePath}'. Exit code: {result.ExitCode}")
+            {
+                PackageSpecification = requirementsFilePath,
+                InstallationOutput = result.StandardOutput + result.StandardError
+            };
+        }
+
+        try
+        {
+            var json = result.StandardOutput.Trim();
+            var data = System.Text.Json.JsonSerializer.Deserialize<List<RequirementStatusJson>>(json, new System.Text.Json.JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+
+            return data?.Select(r => new Models.RequirementStatus(
+                r.Spec,
+                r.Installed,
+                r.Meets,
+                r.Version,
+                r.Required)).ToList() ?? new List<Models.RequirementStatus>();
+        }
+        catch (Exception ex)
+        {
+            throw new RequirementsFileException($"Failed to parse requirement check results: {ex.Message}")
+            {
+                PackageSpecification = requirementsFilePath,
+                InstallationOutput = result.StandardOutput
+            };
+        }
+    }
+
+    /// <summary>
+    /// Checks what packages from a requirements file are missing or don't meet the version requirements (synchronous version).
+    /// </summary>
+    /// <param name="requirementsFilePath">The path to the requirements.txt file.</param>
+    /// <returns>A list of requirement statuses for each item in the requirements file.</returns>
+    public IReadOnlyList<Models.RequirementStatus> CheckRequirements(string requirementsFilePath)
+    {
+        Task<IReadOnlyList<Models.RequirementStatus>> task = CheckRequirementsAsync(requirementsFilePath);
+        task.Wait();
+        return task.Result;
+    }
+
+    private class RequirementStatusJson
+    {
+        public string Spec { get; set; } = string.Empty;
+        public bool Installed { get; set; }
+        public bool Meets { get; set; }
+        public string? Version { get; set; }
+        public string? Required { get; set; }
+    }
+
+    /// <summary>
     /// Installs a Python package from a pyproject.toml file.
     /// </summary>
     /// <param name="pyProjectFilePath">The path to the directory containing pyproject.toml or the pyproject.toml file itself.</param>

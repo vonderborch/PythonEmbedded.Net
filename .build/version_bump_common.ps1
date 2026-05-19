@@ -47,7 +47,11 @@ function Get-LatestVersion
     }
     else
     {
-        Save-LatestVersion -Directory $Directory -Major 0 -Minor 0 -Patch 0 -Revision 0;
+        $lastVersionMajor = 0;
+        $lastVersionMinor = 0;
+        $lastVersionPatch = 0;
+        $lastVersionRevision = 0;
+        Save-LatestVersion -Directory $Directory -Major $lastVersionMajor -Minor $lastVersionMinor -Patch $lastVersionPatch -Revision $lastVersionRevision;
     }
 
     return $lastVersionMajor, $lastVersionMinor, $lastVersionPatch, $lastVersionRevision;
@@ -62,11 +66,11 @@ function Get-ProjectFiles
         [string[]]$ExcludedDirectories
     )
 
-    $files = Get-ChildItem -Path $Directory -Filter "*.csproj" -Recurse -Exclude $ExcludedDirectories | %{
+    $files = Get-ChildItem -Path $Directory -Filter "*.csproj" -Recurse | %{
         $allowed = $true
         foreach ($exclude in $ExcludedDirectories)
         {
-            if ((Split-Path $_.FullName -Parent) -ilike $exclude)
+            if ($_.FullName -ilike "*$exclude*")
             {
                 $allowed = $false
                 break
@@ -109,7 +113,7 @@ function Update-ProjectFiles
 
     # Update all csproj files to match...
     $files = Get-ProjectFiles -Directory $Directory -ExcludedDirectories $ExcludedDirectories
-    $regex = '(?<=Version>)(\d+\.\d+\.\d+\.\d+)*(?=<\/)'
+    $regex = '(?<=Version>)\d+\.\d+\.\d+(\.\d+)?(?=<\/)'
 
     Write-Output "Found $( $files.Count ) files to update..."
     Write-Output "  Files: $files"

@@ -112,6 +112,52 @@ public class PackageManagementIntegrationTests
 
     [Test]
     [Category("Integration")]
+    public async Task CheckRequirements_WithMissingAndMismatchedPackages_ReturnsCorrectStatus()
+    {
+        Assume.That(_runtime, Is.Not.Null);
+
+        // Prepare requirements file
+        var reqFilePath = Path.Combine(_testDirectory, "requirements_test.txt");
+        await File.WriteAllLinesAsync(reqFilePath, new[]
+        {
+            "six==1.16.0",
+            "requests>=2.0.0",
+            "nonexistent-package-abc==1.0.0"
+        });
+
+        // Install only 'six' with a DIFFERENT version to test mismatch
+        // Actually, let's install 'requests' correctly and 'six' incorrectly
+        await _runtime!.InstallPackageAsync("six==1.15.0");
+        await _runtime!.InstallPackageAsync("requests==2.31.0");
+
+        var results = await _runtime.CheckRequirementsAsync(reqFilePath);
+
+        Assert.That(results, Is.Not.Null);
+        Assert.That(results.Count, Is.EqualTo(3));
+
+        // six==1.16.0 should be installed but NOT meet requirement
+        var sixStatus = results.FirstOrDefault(r => r.PackageSpecification.StartsWith("six"));
+        Assert.That(sixStatus, Is.Not.Null);
+        Assert.That(sixStatus!.IsInstalled, Is.True);
+        Assert.That(sixStatus.MeetsRequirement, Is.False, "six 1.15.0 should not meet 1.16.0");
+        Assert.That(sixStatus.InstalledVersion, Is.EqualTo("1.15.0"));
+
+        // requests>=2.0.0 should be installed AND meet requirement
+        var requestsStatus = results.FirstOrDefault(r => r.PackageSpecification.StartsWith("requests"));
+        Assert.That(requestsStatus, Is.Not.Null);
+        Assert.That(requestsStatus!.IsInstalled, Is.True);
+        Assert.That(requestsStatus.MeetsRequirement, Is.True);
+        Assert.That(requestsStatus.InstalledVersion, Is.EqualTo("2.31.0"));
+
+        // nonexistent-package-abc should NOT be installed
+        var missingStatus = results.FirstOrDefault(r => r.PackageSpecification.StartsWith("nonexistent-package-abc"));
+        Assert.That(missingStatus, Is.Not.Null);
+        Assert.That(missingStatus!.IsInstalled, Is.False);
+        Assert.That(missingStatus.MeetsRequirement, Is.False);
+    }
+
+    [Test]
+    [Category("Integration")]
     public async Task GetPackageInfo_WithNonInstalledPackage_ReturnsNull()
     {
         Assume.That(_runtime, Is.Not.Null);

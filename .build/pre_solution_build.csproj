@@ -18,7 +18,6 @@
     </PropertyGroup>
 
     <Target Name="PreBuild" AfterTargets="PreBuildEvent">
-        <Exec Command="PowerShell -NoProfile -ExecutionPolicy Bypass -File &quot;$(SolutionDir).build\pre_build.ps1&quot; -SolutionDir $(SolutionDir)" Condition="'$(ConfigurationName)' == 'Release' and '$(OS)' == 'Windows_NT'"/>
-        <Exec Command="pwsh -NoProfile -ExecutionPolicy Bypass -File &quot;$(SolutionDir).build/pre_build.ps1&quot; -SolutionDir $(SolutionDir)" Condition="'$(ConfigurationName)' == 'Release' and '$(OS)' != 'Windows_NT'"/>
+        <Exec Command="python3 &quot;$(SolutionDir).build/version_bump.py&quot; --directory &quot;$(SolutionDir).&quot; --exclude Templates --mode Dialog" Condition="'$(ConfigurationName)' == 'Release'"/>
     </Target>
 </Project>

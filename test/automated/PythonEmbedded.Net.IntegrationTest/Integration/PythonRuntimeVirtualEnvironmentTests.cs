@@ -60,6 +60,36 @@ public class PythonRuntimeVirtualEnvironmentTests
 
     [Test]
     [Category("Integration")]
+    // Note: This test may take 10+ minutes due to Python download/extraction
+    public void UvIsAvailable_AfterInstanceCreation_ReturnsTrue()
+    {
+        // Arrange
+        Assume.That(this._runtime, Is.Not.Null, "Python runtime was not successfully set up");
+
+        // Assert
+        Assert.That(this._runtime!.IsUvAvailable, Is.True);
+        Assert.That(this._runtime.UvPath, Is.Not.Null.And.Not.Empty);
+    }
+
+    [Test]
+    [Category("Integration")]
+    // Note: This test may take 10+ minutes due to Python download/extraction and package installation
+    public async Task InstallPackage_WithValidPackage_InstallsPackage()
+    {
+        // Arrange
+        Assume.That(this._runtime, Is.Not.Null, "Python runtime was not successfully set up");
+
+        // Act
+        var installResult = await this._runtime!.InstallPackageAsync("six");
+
+        // Assert
+        Assert.That(installResult.ExitCode, Is.EqualTo(0));
+        var importResult = await this._runtime.ExecuteCommandAsync("import six; print(six.__version__)");
+        Assert.That(importResult.ExitCode, Is.EqualTo(0));
+    }
+
+    [Test]
+    [Category("Integration")]
     // Note: This test may take 10+ minutes due to Python download/extraction and venv creation
     public async Task DeleteVirtualEnvironment_WhenExists_DeletesVirtualEnvironment()
     {
