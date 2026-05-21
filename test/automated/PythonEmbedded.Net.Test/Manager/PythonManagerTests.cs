@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using Octokit;
-using PythonEmbedded.Net.Models;
+using PythonEmbedded.Net.OLD;
 using PythonEmbedded.Net.Test.TestUtilities;
 
 namespace PythonEmbedded.Net.Test.Manager;
@@ -79,7 +79,7 @@ public class PythonManagerTests
 
         // Assert
         Assert.That(runtime, Is.Not.Null);
-        Assert.That(runtime, Is.InstanceOf<PythonEmbedded.Net.PythonRootRuntime>());
+        Assert.That(runtime, Is.InstanceOf<PythonRootRuntime>());
     }
 
     [Test]

@@ -5,9 +5,7 @@ using System.Text.Json;
 using Moq;
 using Moq.Protected;
 using NUnit.Framework;
-using PythonEmbedded.Net.Exceptions;
-using PythonEmbedded.Net.Helpers;
-using PythonEmbedded.Net.Models;
+using PythonEmbedded.Net.OLD.Models;
 
 namespace PythonEmbedded.Net.Test.Helpers;
 

@@ -1,49 +1,112 @@
-using Microsoft.Extensions.Caching.Memory;
+﻿using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Octokit;
-using PythonEmbedded.Net.Models;
 
 namespace PythonEmbedded.Net;
 
-/// <summary>
-/// Manager for direct Python runtime instances (not using Python.NET).
-/// </summary>
-public class PythonManager : BasePythonManager
-{
-    private readonly ILoggerFactory? _loggerFactory;
 
-    /// <summary>
-    /// Initializes a new instance of the PythonManager class.
-    /// </summary>
-    /// <param name="directory">The directory where Python instances will be stored.</param>
-    /// <param name="githubClient">The GitHub client for downloading Python distributions.</param>
-    /// <param name="logger">Optional logger for this manager.</param>
-    /// <param name="loggerFactory">Optional logger factory for creating loggers for runtime instances.</param>
-    /// <param name="cache">Optional memory cache for caching GitHub API responses.</param>
-    /// <param name="configuration">Optional configuration settings for this manager.</param>
+public class PythonManager
+{
+    string _directory;
+    
+    GitHubClient _githubClient;
+    
+    ILogger<PythonManager>? _logger;
+    
+    ILoggerFactory? _loggerFactory;
+    
+    IMemoryCache? _cache;
+    
+    PythonFactory _factory;
+    
+    string? _defaultPythonVersion;
+    
+    string? _defaultPipIndexUrl;
+    
+    string? _pipProxyUrl;
+    
+    TimeSpan? _defaultTimeout;
+    
+    int _retryAttempts;
+    
+    TimeSpan? _retryDelay;
+    
+    bool _useExponentialBackoff;
+    
+    string? _uvPath;
+    
     public PythonManager(
         string directory,
         GitHubClient githubClient,
         ILogger<PythonManager>? logger = null,
         ILoggerFactory? loggerFactory = null,
         IMemoryCache? cache = null,
-        ManagerConfiguration? configuration = null)
-        : base(directory, githubClient, logger, loggerFactory, cache, configuration)
+        PythonFactory? instanceFactory = null,
+        string? defaultPythonVersion = null,
+        string? defaultPipIndexUrl = null,
+        string? pipProxyUrl = null,
+        TimeSpan? defaultTimeout = null,
+        int retryAttempts = 3,
+        TimeSpan? retryDelay = null,
+        bool useExponentialBackoff = true,
+        string? uvPath = null
+    )
     {
+        _factory = instanceFactory ?? new PythonFactory();
+        _githubClient = githubClient;
+        _logger = logger;
         _loggerFactory = loggerFactory;
+        _cache = cache;
+        _defaultPythonVersion = defaultPythonVersion;
+        _defaultPipIndexUrl = defaultPipIndexUrl;
+        _pipProxyUrl = pipProxyUrl;
+        _defaultTimeout = defaultTimeout;
+        _retryAttempts = retryAttempts >= 0 ? retryAttempts : throw new ArgumentOutOfRangeException(nameof(retryAttempts), "Retry attempts must be a non-negative integer.");
+        _retryDelay = retryDelay ?? TimeSpan.FromSeconds(1);
+        _useExponentialBackoff = useExponentialBackoff;
+        _uvPath = uvPath;
+        
+        if (string.IsNullOrWhiteSpace(directory))
+        {
+            throw new ArgumentException("Directory cannot be null or whitespace", nameof(directory));
+        }
+
+        _directory = directory;
+        if (!Path.IsPathRooted(directory))
+        {
+            _directory = Path.Combine(Directory.GetCurrentDirectory(), directory);
+        }
+
+        if (Directory.Exists(_directory))
+        {
+            _logger?.LogDebug("Using existing root directory: {RootDirectory}", _directory);
+        }
+        else
+        {
+            Directory.CreateDirectory(_directory);
+            _logger?.LogInformation("Created new root directory: {RootDirectory}", _directory);
+        }
     }
 
-    /// <summary>
-    /// Gets a Python runtime instance for the specified instance metadata.
-    /// </summary>
-    /// <param name="instanceMetadata">The metadata for the Python instance.</param>
-    /// <returns>A Python root runtime instance.</returns>
-    public override BasePythonRuntime GetPythonRuntimeForInstance(InstanceMetadata instanceMetadata)
+    private PythonInstance GetOrCreateRootInstanceAsync(
+        Version? pythonVersion = null, DateTime? buildDate = null, CancellationToken cancellationToken = default
+        )
     {
-        if (instanceMetadata == null)
-            throw new ArgumentNullException(nameof(instanceMetadata));
+        
+    }
 
-        ILogger<PythonRootRuntime>? logger = _loggerFactory?.CreateLogger<PythonRootRuntime>();
-        return new PythonRootRuntime(instanceMetadata, logger);
+    public async Task<PythonInstance> GetOrCreateInstanceAsync(string name, bool recreateIfExists = false, string? externalPath = null,
+        string? pythonVersion = null, DateTime? buildDate = null, Func<PythonInstance>? postCreationCommand = null, CancellationToken cancellationToken = default
+    )
+    {
+        Version? parsedPythonVersion = pythonVersion is null ? null : new Version(pythonVersion);
+        await GetOrCreateInstanceAsync(name, recreateIfExists, externalPath, parsedPythonVersion, buildDate, postCreationCommand, cancellationToken);
+    }
+
+    public async Task<PythonInstance> GetOrCreateInstanceAsync(string name, bool recreateIfExists = false, string? externalPath = null,
+        Version? pythonVersion = null, DateTime? buildDate = null, Func<PythonInstance>? postCreationCommand = null, CancellationToken cancellationToken = default
+    )
+    {
+        
     }
 }

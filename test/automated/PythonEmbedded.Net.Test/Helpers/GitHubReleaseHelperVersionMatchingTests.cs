@@ -1,8 +1,6 @@
 using NUnit.Framework;
 using Octokit;
-using PythonEmbedded.Net.Exceptions;
-using PythonEmbedded.Net.Helpers;
-using PythonEmbedded.Net.Models;
+using PythonEmbedded.Net.OLD.Helpers;
 
 namespace PythonEmbedded.Net.Test.Helpers;
 

@@ -1,5 +1,5 @@
 using NUnit.Framework;
-using PythonEmbedded.Net.Models;
+using PythonEmbedded.Net.OLD.Models;
 
 namespace PythonEmbedded.Net.Test.Models;
 

@@ -1,7 +1,8 @@
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using Octokit;
-using PythonEmbedded.Net.Models;
+using PythonEmbedded.Net.OLD;
+using PythonEmbedded.Net.OLD.Models;
 using PythonEmbedded.Net.Test.TestUtilities;
 
 namespace PythonEmbedded.Net.Test.Manager;
@@ -44,7 +45,7 @@ public class ManagerConfigurationTests
         };
 
         // Act
-        var manager = new PythonEmbedded.Net.PythonManager(_testDirectory, _githubClient, configuration: config);
+        var manager = new PythonManager(_testDirectory, _githubClient, configuration: config);
 
         // Assert
         Assert.That(manager.Configuration, Is.Not.Null);
@@ -61,7 +62,7 @@ public class ManagerConfigurationTests
     public void Constructor_WithoutConfiguration_UsesDefaultConfiguration()
     {
         // Act
-        var manager = new PythonEmbedded.Net.PythonManager(_testDirectory, _githubClient);
+        var manager = new PythonManager(_testDirectory, _githubClient);
 
         // Assert
         Assert.That(manager.Configuration, Is.Not.Null);
@@ -73,7 +74,7 @@ public class ManagerConfigurationTests
     public void Configuration_CanBeModified()
     {
         // Arrange
-        var manager = new PythonEmbedded.Net.PythonManager(_testDirectory, _githubClient);
+        var manager = new PythonManager(_testDirectory, _githubClient);
         var originalRetryAttempts = manager.Configuration.RetryAttempts;
 
         // Act
@@ -88,7 +89,7 @@ public class ManagerConfigurationTests
     public void Configuration_SetToNull_ThrowsArgumentNullException()
     {
         // Arrange
-        var manager = new PythonEmbedded.Net.PythonManager(_testDirectory, _githubClient);
+        var manager = new PythonManager(_testDirectory, _githubClient);
 
         // Act & Assert
         Assert.Throws<ArgumentNullException>(() => manager.Configuration = null!);
@@ -124,7 +125,7 @@ public class ManagerConfigurationTests
         };
 
         // Act
-        var manager = new PythonEmbedded.Net.PythonNetManager(_testDirectory, _githubClient, configuration: config);
+        var manager = new PythonNetManager(_testDirectory, _githubClient, configuration: config);
 
         // Assert
         Assert.That(manager.Configuration, Is.Not.Null);

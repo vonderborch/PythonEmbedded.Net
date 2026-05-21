@@ -1,7 +1,6 @@
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using Octokit;
-using PythonEmbedded.Net.Models;
 using PythonEmbedded.Net.Test.TestUtilities;
 
 namespace PythonEmbedded.Net.IntegrationTest.Runtime;

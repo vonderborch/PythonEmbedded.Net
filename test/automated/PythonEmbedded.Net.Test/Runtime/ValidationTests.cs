@@ -1,5 +1,6 @@
 using NUnit.Framework;
 using PythonEmbedded.Net;
+using PythonEmbedded.Net.OLD;
 
 namespace PythonEmbedded.Net.Test.Runtime;
 

@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using Octokit;
-using PythonEmbedded.Net.Models;
+using PythonEmbedded.Net.OLD;
 using PythonEmbedded.Net.Test.TestUtilities;
 
 namespace PythonEmbedded.Net.Test.Manager;
@@ -14,14 +14,14 @@ namespace PythonEmbedded.Net.Test.Manager;
 public class BuildDateTests
 {
     private string _testDirectory = null!;
-    private PythonEmbedded.Net.PythonManager _manager = null!;
+    private PythonManager _manager = null!;
 
     [SetUp]
     public void SetUp()
     {
         _testDirectory = TestDirectoryHelper.CreateTestDirectory("BuildDate");
         var githubClient = new GitHubClient(new ProductHeaderValue("PythonEmbedded.Net-Test"));
-        _manager = new PythonEmbedded.Net.PythonManager(_testDirectory, githubClient);
+        _manager = new PythonManager(_testDirectory, githubClient);
     }
 
     [TearDown]

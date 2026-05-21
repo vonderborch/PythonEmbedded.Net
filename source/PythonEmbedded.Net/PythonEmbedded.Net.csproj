@@ -54,6 +54,14 @@
         </None>
     </ItemGroup>
 
+    <ItemGroup>
+      <Folder Include="Exceptions\" />
+      <Folder Include="Implementations\" />
+      <Folder Include="Models\" />
+      <Folder Include="Services\" />
+      <Folder Include="Utilities\" />
+    </ItemGroup>
+
     <Target Name="PostBuild" AfterTargets="PostBuildEvent">
         <Exec Command="python3 -c &quot;import shutil; shutil.make_archive('$(SolutionDir)release/$(ProjectName)', 'zip', '$(TargetDir)')&quot;" Condition="'$(ConfigurationName)' == 'Release'"/>
     </Target>

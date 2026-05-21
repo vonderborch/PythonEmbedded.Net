@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
-using PythonEmbedded.Net.Exceptions;
+using PythonEmbedded.Net.OLD;
 using PythonEmbedded.Net.Test.TestUtilities;
 
 namespace PythonEmbedded.Net.Test.Runtime;

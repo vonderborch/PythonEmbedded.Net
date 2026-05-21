@@ -1,5 +1,6 @@
 using NUnit.Framework;
-using PythonEmbedded.Net.Helpers;
+using PythonEmbedded.Net.OLD.Exceptions;
+using PythonEmbedded.Net.OLD.Helpers;
 
 namespace PythonEmbedded.Net.Test.Helpers;
 
@@ -32,7 +33,7 @@ public class VersionParserTests
     [Test]
     public void ParseVersion_WithSingleNumber_ThrowsException()
     {
-        Assert.Throws<PythonEmbedded.Net.Exceptions.InvalidPythonVersionException>(() =>
+        Assert.Throws<InvalidPythonVersionException>(() =>
         {
             VersionParser.ParseVersion("3");
         });
