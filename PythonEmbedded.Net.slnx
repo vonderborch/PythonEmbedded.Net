@@ -75,9 +75,15 @@
     <File Path="generate_logo.py" />
   </Folder>
   <Folder Name="/source/">
+    <Project Path="source/PythonEmbedded.Net.Python.Net/PythonEmbedded.Net.Python.Net.csproj" />
     <Project Path="source\PythonEmbedded.Net\PythonEmbedded.Net.csproj">
       <BuildDependency Project=".build\pre_solution_build.csproj" />
     </Project>
+  </Folder>
+  <Folder Name="/source/PackageManagers/">
+    <Project Path="source/PackageManagers/PythonEmbedded.Net.conda/PythonEmbedded.Net.conda.csproj" />
+    <Project Path="source/PackageManagers/PythonEmbedded.Net.poetry/PythonEmbedded.Net.poetry.csproj" />
+    <Project Path="source/PackageManagers/PythonEmbedded.Net.uv/PythonEmbedded.Net.uv.csproj" />
   </Folder>
   <Folder Name="/test/" />
   <Folder Name="/test/automated/">
