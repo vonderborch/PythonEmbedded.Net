@@ -6,7 +6,7 @@ namespace PythonEmbedded.Net.Models;
 /// Data transfer object for GitHub release asset information.
 /// Used for HTTP-based operations that are more efficient than Octokit.
 /// </summary>
-public class GitHubReleaseAssetDto
+internal class GitHubReleaseAssetDto
 {
     [JsonPropertyName("id")]
     public long Id { get; set; }

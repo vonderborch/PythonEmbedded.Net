@@ -6,7 +6,7 @@ namespace PythonEmbedded.Net.Models;
 /// Data transfer object for GitHub release information.
 /// Used for HTTP-based operations that are more efficient than Octokit (e.g., date-based filtering).
 /// </summary>
-public class GitHubReleaseDto
+internal class GitHubReleaseDto
 {
     [JsonPropertyName("tag_name")]
     public string TagName { get; set; } = string.Empty;
