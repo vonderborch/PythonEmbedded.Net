@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using PythonEmbedded.Net.Helpers;
 using PythonEmbedded.Net.Models;
+using PythonEmbedded.Net.PythonProviders;
 using PythonEmbedded.Net.PythonProviders.PythonBuildStandalone;
 
 namespace PythonEmbedded.Net;
@@ -22,8 +23,7 @@ public class PythonRuntime : IDisposable
     {
         _logger = logger;
         _loggerFactory = loggerFactory;
-        _provider = provider;
-        _provider ??= new PythonBuildStandaloneProvider();
+        _provider = provider ?? new PythonBuildStandaloneProvider();
         
         var actualBackend = backend ?? Constants.DefaultBackend;
         _logger?.LogDebug("Setting Python runtime for directory `{directory}` tp backend: {Backend}", directory, actualBackend);

@@ -1,9 +1,10 @@
-namespace PythonEmbedded.Net.PythonProviders;
+namespace PythonEmbedded.Net.Helpers;
 
 /// <summary>
-/// Provides utilities for working with Python-related assets and managing version compatibility.
+/// Provides utility functions for handling and processing asset-related operations,
+/// including version and platform matching.
 /// </summary>
-public static class PythonProviderHelpers
+public static class AssetHelpers
 {
     /// <summary>
     /// Determines whether the specified asset version matches the target version based on their component values.
