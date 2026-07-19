@@ -26,44 +26,6 @@
     <File Path="Docs\README.md" />
     <File Path="Docs\Troubleshooting.md" />
   </Folder>
-  <Folder Name="/Docs/API/">
-    <File Path="Docs\API\Managers.md" />
-    <File Path="Docs\API\Models.md" />
-    <File Path="Docs\API\README.md" />
-    <File Path="Docs\API\Runtimes.md" />
-  </Folder>
-  <Folder Name="/Docs/API/Exceptions/">
-    <File Path="Docs\API\Exceptions\PythonExecutionException.md" />
-  </Folder>
-  <Folder Name="/Docs/API/Managers/">
-    <File Path="Docs\API\Managers\BasePythonManager.md" />
-    <File Path="Docs\API\Managers\PythonManager.md" />
-    <File Path="Docs\API\Managers\PythonNetManager.md" />
-  </Folder>
-  <Folder Name="/Docs/API/Models/">
-    <File Path="Docs\API\Models\InstanceMetadata.md" />
-    <File Path="Docs\API\Models\ManagerConfiguration.md" />
-    <File Path="Docs\API\Models\PackageInfo.md" />
-    <File Path="Docs\API\Models\PipConfiguration.md" />
-    <File Path="Docs\API\Models\PyPIPackageInfo.md" />
-  </Folder>
-  <Folder Name="/Docs/API/Records/">
-    <File Path="Docs\API\Records\ProcessExecutionResult.md" />
-    <File Path="Docs\API\Records\PythonExecutionResult.md" />
-  </Folder>
-  <Folder Name="/Docs/API/Runtimes/">
-    <File Path="Docs\API\Runtimes\BasePythonRootRuntime.md" />
-    <File Path="Docs\API\Runtimes\BasePythonRuntime.md" />
-    <File Path="Docs\API\Runtimes\BasePythonVirtualRuntime.md" />
-    <File Path="Docs\API\Runtimes\PythonNetRootRuntime.md" />
-    <File Path="Docs\API\Runtimes\PythonNetVirtualEnvironment.md" />
-    <File Path="Docs\API\Runtimes\PythonRootRuntime.md" />
-    <File Path="Docs\API\Runtimes\PythonRootVirtualEnvironment.md" />
-  </Folder>
-  <Folder Name="/Docs/API/Services/">
-    <File Path="Docs\API\Services\IProcessExecutor.md" />
-    <File Path="Docs\API\Services\ProcessExecutor.md" />
-  </Folder>
   <Folder Name="/SolutionFiles/">
     <File Path=".gitattributes" />
     <File Path=".gitignore" />
