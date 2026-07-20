@@ -5,8 +5,8 @@ The complete public API of PythonEmbedded.Net 2.x. Every `*Async` method has a s
 ## Entry point
 
 ```csharp
-PythonEnvironment.Configure(Action<PythonOptions>);                   // once, before first use
-PythonEnvironment.GetEnvironmentAsync(version, name);                 // → PythonVirtualEnvironment; name is required
+PythonEnvironment.Configure(Action<PythonOptions>);                   // once, before first use — sets defaults
+PythonEnvironment.GetEnvironmentAsync(version, name, ct, installer?, runner?);  // → PythonVirtualEnvironment; name is required
 PythonEnvironment.GetInstallationAsync(version);                      // → PythonInstallation
 PythonEnvironment.ListInstallationsAsync();                           // → IReadOnlyList<PythonInstallation>
 PythonEnvironment.RemoveAsync(installation);                          // delete install + its envs
@@ -14,14 +14,16 @@ PythonEnvironment.RemoveAsync(installation);                          // delete 
 
 Version strings: `"latest"` | `"3"` | `"3.13"` | `"3.13.2"` | `"3.15.0b3"`.
 
+`installer`/`runner` override `PythonOptions.Installer`/`.Runner` for one environment. The installer is **recorded**: an environment's installer is fixed at creation and reopening it with a different one throws `PythonException(EnvironmentFailed)`. The runner is **not recorded** — it's resolved fresh on every call and can differ per fetch.
+
 ## PythonOptions
 
 | Member | Default |
 | --- | --- |
 | `RootDirectory` | app-local data folder (entry assembly name) |
 | `Sources` (`IList<IPythonSource>`) | bundled runtime packages, then astral download |
-| `Installer` (`IPackageInstaller`) | pip + venv |
-| `Runner` (`IPythonRunner`) | buffered subprocess |
+| `Installer` (`IPackageInstaller`) | pip + venv — default, overridable per environment (recorded) |
+| `Runner` (`IPythonRunner`) | buffered subprocess — default, overridable per environment (not recorded) |
 | `GitHubToken` | `GITHUB_TOKEN` env var |
 | `ReleaseCacheTtl` | 24 h |
 | `Offline` | false |

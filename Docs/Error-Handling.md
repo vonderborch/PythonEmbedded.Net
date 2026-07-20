@@ -28,7 +28,7 @@ The single exception type for anything that goes wrong outside of running Python
 | `UnsupportedPlatform` | The current OS/architecture has no matching build |
 | `DownloadFailed` | A download failed or its checksum didn't match |
 | `InstallFailed` | Extraction or install-tree setup failed |
-| `EnvironmentFailed` | Virtual environment creation failed |
+| `EnvironmentFailed` | Virtual environment creation failed, or a fetch tried to reopen an existing environment with a different installer than the one it was created with |
 | `PackageOperationFailed` | Install/uninstall/list failed |
 | `ToolMissing` | A required external tool (uv, poetry, micromamba) couldn't be resolved or provisioned |
 | `Locked` | A cross-process lock could not be acquired within `LockTimeout` |

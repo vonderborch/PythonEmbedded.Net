@@ -16,7 +16,7 @@ Users interact with three sealed handles — `PythonInstallation`, `PythonVirtua
 
 ## The three interfaces
 
-All extensibility flows through three small interfaces, configured via `PythonEnvironment.Configure` (explicit instances — satellites are never auto-discovered):
+All extensibility flows through three small interfaces, configured via `PythonEnvironment.Configure` (explicit instances — satellites are never auto-discovered). `Configure` sets process-wide *defaults*; `GetEnvironmentAsync` also accepts optional `installer`/`runner` parameters that override the default for one environment — see below.
 
 - **`IPythonSource.TryInstallAsync(request, targetDir, context, ct)`** — return null to pass, or materialize a full install tree and return its metadata. The `SourceContext` provides shared plumbing (HTTP, checksum-verified download cache, ETag'd JSON cache) so sources stay tiny. Built-in: bundled archives (`python-embedded-runtimes/` beside the app), astral downloads. Satellite-able: compile-from-source, custom mirrors.
 - **`IPackageInstaller`** — creates environments and performs package operations. Built-in: pip/venv. Satellites: uv, conda (micromamba), poetry.
@@ -32,7 +32,14 @@ Each interface has a matching abstract base — `PythonSourceBase`, `PackageInst
 2. Lock-free scan of `installs/*/install.json` for a match — the warm path, no locks, no network.
 3. Miss → acquire `locks/install-3.13.lock` (file lock), re-check, then try each source in order into a staging dir under `tmp/`.
 4. Success → atomic `Directory.Move` into `installs/<id>/`, then write `install.json` **last**.
-5. Environment: check `envs/<id>/<name>/env.json`; miss → env lock → `Installer.CreateEnvironmentAsync` (in place — venvs embed absolute paths) → write `env.json` last.
+5. Environment: check `envs/<id>/<name>/env.json`; miss → env lock → the effective installer's `CreateEnvironmentAsync` (in place — venvs embed absolute paths) → write `env.json` last, recording the installer's `Name`.
+
+## Per-environment installer/runner overrides
+
+`GetEnvironmentAsync` (facade, `PythonInstallation`, and internally `PythonHost`) accepts optional `installer`/`runner` parameters alongside `version`/`name`. Each falls back to `PythonOptions.Installer`/`.Runner` when omitted, but the two behave asymmetrically:
+
+- **Installer** materially affects how the environment was built on disk (venv layout, lockfile semantics, etc.), so it is recorded in `env.json` the first time the environment is created and fixed for that environment's lifetime. Any later `GetEnvironmentAsync` call — whether it passes an explicit `installer` or falls back to the current `Options.Installer` — must resolve to an installer whose `Name` matches what's recorded, or the call throws `PythonException(EnvironmentFailed)`. This is deliberate: switching installers on an existing environment silently would leave its on-disk state built by one tool but managed by another.
+- **Runner** is a pure execution-time concern with no effect on disk state, so it is never recorded or validated. Each `GetEnvironmentAsync` call resolves and captures a runner (override or default) into the returned `PythonVirtualEnvironment` handle independently — two handles for the same environment can legitimately use different runners.
 
 ## On-disk layout
 

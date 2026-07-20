@@ -95,6 +95,10 @@ var env = await PythonEnvironment.GetEnvironmentAsync("3.13", "myapp");
 
 Environments are cached by `(installation, name)` — calling `GetEnvironmentAsync` again with the same version and name returns the existing one. To start clean, remove the installation (which removes all its environments) via `PythonEnvironment.RemoveAsync`, or delete `<root>/envs/<install-id>/<name>/` directly and retry.
 
+### `Kind = EnvironmentFailed`: "cannot be reopened with a different installer"
+
+An environment's installer is recorded when it's first created and fixed for its lifetime (see [Architecture.md](Architecture.md#per-environment-installerrunner-overrides)) — this is not the same restriction as above. It's thrown when a `GetEnvironmentAsync` call resolves to an installer (an explicit `installer` argument, or the current `Options.Installer` default) whose `Name` doesn't match the one recorded for that environment, which usually means either `Options.Installer` changed after the environment was created, or the wrong `installer` argument was passed. Pass the matching installer explicitly, or remove and recreate the environment if you actually want to switch tools.
+
 ## Package Installation Issues
 
 ### `Kind = PackageOperationFailed`

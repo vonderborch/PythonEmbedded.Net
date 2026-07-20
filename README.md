@@ -66,7 +66,7 @@ Implement one, hand it to `PythonEnvironment.Configure`, done.
 
 ## Documentation
 
-Start with [Docs/Getting-Started.md](Docs/Getting-Started.md); the full index is in [Docs/README.md](Docs/README.md).
+Start with [Docs/Getting-Started.md](Docs/Getting-Started.md); the full index is in [Docs/README.md](Docs/README.md). If you're an AI coding agent, read [Docs/AI-Reference.md](Docs/AI-Reference.md) first.
 
 ## Requirements
 
