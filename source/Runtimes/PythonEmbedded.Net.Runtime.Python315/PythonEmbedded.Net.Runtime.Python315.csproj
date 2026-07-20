@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <Import Project="archives.props" />
+    <Import Project="../PythonEmbedded.Net.Runtime.Template/Runtime.props" />
+    <Import Project="../PythonEmbedded.Net.Runtime.Template/Runtime.targets" />
+</Project>

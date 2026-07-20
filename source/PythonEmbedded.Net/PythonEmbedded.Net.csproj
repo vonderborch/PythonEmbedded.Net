@@ -2,7 +2,7 @@
     <PropertyGroup>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
-        <Version>1.5.0.42</Version>
+        <Version>2.0.0.45</Version>
         <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
         <Title>PythonEmbedded.Net</Title>
         <Authors>Christian Webber</Authors>
@@ -14,8 +14,8 @@
         <PackageIcon>logo.png</PackageIcon>
         <RepositoryUrl>https://github.com/vonderborch/PythonEmbedded.Net</RepositoryUrl>
         <PackageTags>Python, Local, Embedded</PackageTags>
-        <AssemblyVersion>1.5.0.42</AssemblyVersion>
-        <FileVersion>1.5.0.42</FileVersion>
+        <AssemblyVersion>2.0.0.45</AssemblyVersion>
+        <FileVersion>2.0.0.45</FileVersion>
         <Company>Christian Webber</Company>
         <TargetFrameworks>net9.0;net10.0</TargetFrameworks>
     </PropertyGroup>
@@ -31,14 +31,11 @@
 
     <ItemGroup>
         <InternalsVisibleTo Include="PythonEmbedded.Net.Test" />
+        <InternalsVisibleTo Include="PythonEmbedded.Net.IntegrationTest" />
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="9.0.0" />
         <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.1" />
-        <PackageReference Include="Octokit" Version="14.0.0" />
-        <PackageReference Include="pythonnet" Version="3.0.5" />
-        <PackageReference Include="Tomlyn" Version="0.19.0" />
     </ItemGroup>
 
     <ItemGroup>

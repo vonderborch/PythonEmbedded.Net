@@ -10,8 +10,8 @@
         <Configurations>Debug;Release</Configurations>
         <Platforms>AnyCPU</Platforms>
         <ApplicationIcon>..\..\..\logo.ico</ApplicationIcon>
-        <AssemblyVersion>1.5.0.42</AssemblyVersion>
-        <FileVersion>1.5.0.42</FileVersion>
+        <AssemblyVersion>2.0.0.45</AssemblyVersion>
+        <FileVersion>2.0.0.45</FileVersion>
         <TargetFrameworks>net9.0;net10.0</TargetFrameworks>
     </PropertyGroup>
 

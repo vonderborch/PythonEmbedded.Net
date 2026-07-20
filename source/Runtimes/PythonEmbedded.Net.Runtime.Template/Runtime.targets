@@ -1,0 +1,23 @@
+﻿<!-- Downloads this runtime's archives (all platforms) before build/pack, verifying each
+     against the sha256 pinned in archives.props. Archives are gitignored; the manifest
+     (URLs + hashes) is the only committed input. -->
+<Project>
+    <Target Name="PyDownloadArchives" BeforeTargets="DispatchToInnerBuilds;BeforeBuild">
+        <MakeDir Directories="$(PyArchiveDir)" />
+        <DownloadFile
+            Condition="!Exists('$(PyArchiveDir)%(PyArchive.Identity)')"
+            SourceUrl="%(PyArchive.Url)"
+            DestinationFolder="$(PyArchiveDir)"
+            Retries="3" />
+
+        <GetFileHash Files="@(PyArchive->'$(PyArchiveDir)%(Identity)')" Algorithm="SHA256">
+            <Output TaskParameter="Items" ItemName="_PyHashedArchive" />
+        </GetFileHash>
+        <Delete
+            Condition="!$([System.String]::Equals('%(_PyHashedArchive.FileHash)', '%(_PyHashedArchive.Sha256)', StringComparison.OrdinalIgnoreCase))"
+            Files="%(_PyHashedArchive.Identity)" />
+        <Error
+            Condition="!$([System.String]::Equals('%(_PyHashedArchive.FileHash)', '%(_PyHashedArchive.Sha256)', StringComparison.OrdinalIgnoreCase))"
+            Text="Checksum mismatch for %(_PyHashedArchive.Filename)%(_PyHashedArchive.Extension); the corrupt file was deleted — rebuild to retry the download." />
+    </Target>
+</Project>

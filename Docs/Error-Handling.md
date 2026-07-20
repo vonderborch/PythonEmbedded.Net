@@ -1,520 +1,165 @@
 # Error Handling
 
-This document describes the exception hierarchy and best practices for error handling in PythonEmbedded.Net **1.4.x**.
+PythonEmbedded.Net 2.x deliberately has **two exception types**. This document covers both, plus how cancellation and nonzero exit codes surface.
 
 ## Exception Hierarchy
 
-PythonEmbedded.Net uses a hierarchical exception structure to provide clear, actionable error information:
-
 ```
 Exception
-├── PythonInstallationException (base for installation issues)
-│   ├── InstanceNotFoundException
-│   ├── InvalidPythonVersionException
-│   ├── MetadataCorruptedException
-│   ├── PlatformNotSupportedException
-│   └── PythonNotInstalledException
-├── PackageInstallationException (base for package issues)
-│   ├── InvalidPackageSpecificationException
-│   └── RequirementsFileException
-├── PythonExecutionException (base for execution issues)
-│   └── PythonNetExecutionException
-├── PythonNetInitializationException
-└── VirtualEnvironmentNotFoundException
+└── PythonException            // every library failure, tagged with a Kind
+      └── PythonProcessException   // Python code that failed (nonzero exit / timeout)
 ```
 
-## Exception Reference
+`OperationCanceledException` is never wrapped — a cancelled `CancellationToken` always surfaces as itself.
 
-### PythonInstallationException
+## PythonException
 
-Base exception for all Python installation-related errors.
-
-**Properties:** None specific to base class.
-
-**When thrown:**
-- General installation failures
-- Base class for more specific installation exceptions
-
-### InstanceNotFoundException
-
-Thrown when a requested Python instance cannot be found.
+The single exception type for anything that goes wrong outside of running Python code: resolving a version, downloading an interpreter, creating an environment, managing packages, locking, or tool provisioning.
 
 **Properties:**
-- `PythonVersion` (string?): The Python version that was requested
-- `BuildDate` (DateTime?): The build date that was requested
+- `Kind` (`PythonErrorKind`): what category of failure this is
+- `Message`: human-readable detail
 
-**When thrown:**
-- `GetOrCreateInstanceAsync` cannot find a matching release on GitHub
-- Requested version/build date combination doesn't exist
+**`PythonErrorKind` values:**
+
+| Kind | When it's thrown |
+| --- | --- |
+| `VersionNotFound` | No source could satisfy the requested version |
+| `UnsupportedPlatform` | The current OS/architecture has no matching build |
+| `DownloadFailed` | A download failed or its checksum didn't match |
+| `InstallFailed` | Extraction or install-tree setup failed |
+| `EnvironmentFailed` | Virtual environment creation failed |
+| `PackageOperationFailed` | Install/uninstall/list failed |
+| `ToolMissing` | A required external tool (uv, poetry, micromamba) couldn't be resolved or provisioned |
+| `Locked` | A cross-process lock could not be acquired within `LockTimeout` |
+| `Offline` | An operation needed the network but `Offline = true` |
+| `ExecutionFailed` | The runner failed to start or communicate with the Python process |
+| `Timeout` | A run exceeded `RunOptions.Timeout` and was killed |
 
 **Example:**
+
 ```csharp
 try
 {
-    var runtime = await manager.GetOrCreateInstanceAsync("99.99.99");
+    var env = await PythonEnvironment.GetEnvironmentAsync("99.99.99", "myapp");
 }
-catch (InstanceNotFoundException ex)
+catch (PythonException ex) when (ex.Kind == PythonErrorKind.VersionNotFound)
 {
-    Console.WriteLine($"Python {ex.PythonVersion} not found");
-    Console.WriteLine($"Build date: {ex.BuildDate?.ToString("yyyy-MM-dd") ?? "latest"}");
+    Console.WriteLine("No matching Python build was found.");
 }
 ```
 
-### InvalidPythonVersionException
+## PythonProcessException
 
-Thrown when an invalid Python version string is provided.
+Thrown by `RunAsync`/`RunCodeAsync`/`RunModuleAsync` (and their sync twins) when the process exits nonzero or times out, **unless** `RunOptions.ThrowOnError = false`.
 
 **Properties:**
-- `InvalidVersion` (string?): The invalid version string
-
-**When thrown:**
-- Version string cannot be parsed
-- Version format is invalid
+- `Result` (`PythonResult`): the full result — `ExitCode`, `StandardOutput`, `StandardError`, `Duration`
+- `Kind`: `PythonErrorKind.Timeout` on timeout, otherwise `ExecutionFailed`
+- Inherits `Message` from `PythonException`
 
 **Example:**
+
 ```csharp
 try
 {
-    var runtime = await manager.GetOrCreateInstanceAsync("invalid-version");
+    await env.RunAsync("flaky.py");
 }
-catch (InvalidPythonVersionException ex)
+catch (PythonProcessException ex)
 {
-    Console.WriteLine($"Invalid version: {ex.InvalidVersion}");
+    Console.WriteLine($"Exit {ex.Result.ExitCode}");
+    Console.WriteLine(ex.Result.StandardError);
 }
 ```
 
-### MetadataCorruptedException
+## Opting Out of Exceptions
 
-Thrown when instance metadata is corrupted or unreadable.
+Pass `ThrowOnError = false` to get a `PythonResult` back regardless of outcome:
 
-**Properties:**
-- `MetadataFilePath` (string?): Path to the corrupted metadata file
-
-**When thrown:**
-- Metadata file is corrupted
-- Metadata file cannot be parsed
-
-**Example:**
 ```csharp
+var result = await env.RunAsync("might-fail.py", options: new RunOptions { ThrowOnError = false });
+if (!result.Success)
+{
+    Console.WriteLine($"Failed with exit code {result.ExitCode}: {result.StandardError}");
+}
+```
+
+`result.EnsureSuccess()` lets you defer the throw:
+
+```csharp
+var result = await env.RunAsync("job.py", options: new RunOptions { ThrowOnError = false });
+// ... inspect result, log, whatever ...
+result.EnsureSuccess();   // throws PythonProcessException now, if it failed
+```
+
+## Cancellation
+
+Every async method accepts a `CancellationToken`. A cancelled token surfaces as `OperationCanceledException`, not `PythonException` — catch it separately:
+
+```csharp
+using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
 try
 {
-    var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
+    await env.RunAsync("long-job.py", ct: cts.Token);
 }
-catch (MetadataCorruptedException ex)
+catch (OperationCanceledException)
 {
-    Console.WriteLine($"Corrupted metadata at: {ex.MetadataFilePath}");
-    // May need to delete the instance directory and reinstall
+    Console.WriteLine("Cancelled.");
 }
 ```
 
-### PlatformNotSupportedException
-
-Thrown when the current platform is not supported.
-
-**Properties:**
-- `Platform` (string?): The platform that was requested or detected
-
-**When thrown:**
-- Current platform cannot be detected
-- Platform is not supported by python-build-standalone
-
-**Example:**
-```csharp
-try
-{
-    var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
-}
-catch (PlatformNotSupportedException ex)
-{
-    Console.WriteLine($"Platform not supported: {ex.Platform}");
-}
-```
-
-### PythonNotInstalledException
-
-Thrown when Python installation is missing or invalid.
-
-**Properties:** None specific.
-
-**When thrown:**
-- Python executable not found after installation
-- Installation verification fails
-
-**Example:**
-```csharp
-try
-{
-    var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
-    await runtime.ExecuteCommandAsync("print('test')");
-}
-catch (PythonNotInstalledException ex)
-{
-    Console.WriteLine("Python installation is invalid");
-}
-```
-
-### PackageInstallationException
-
-Base exception for package installation failures.
-
-**Properties:**
-- `PackageSpecification` (string?): The package that failed to install
-- `InstallationOutput` (string?): Output from the package manager (uv or pip, depending on `useUv`)
-
-**When thrown:**
-- Package installation fails
-- Base class for more specific package exceptions
-
-**Example:**
-```csharp
-try
-{
-    await runtime.InstallPackageAsync("invalid-package-name");
-}
-catch (PackageInstallationException ex)
-{
-    Console.WriteLine($"Package installation failed: {ex.PackageSpecification}");
-    Console.WriteLine($"Output: {ex.InstallationOutput}");
-}
-```
-
-### InvalidPackageSpecificationException
-
-Thrown when a package specification is invalid.
-
-**Properties:** Inherits from `PackageInstallationException`
-
-**When thrown:**
-- Package specification format is invalid
-- Package name is empty or null
-
-**Example:**
-```csharp
-try
-{
-    await runtime.InstallPackageAsync("");
-}
-catch (InvalidPackageSpecificationException ex)
-{
-    Console.WriteLine("Package specification is invalid");
-}
-```
-
-### RequirementsFileException
-
-Thrown when installation from requirements.txt fails.
-
-**Properties:**
-- `RequirementsFilePath` (string?): Path to the requirements file
-- Inherits `PackageSpecification` and `InstallationOutput` from base
-
-**When thrown:**
-- Requirements file not found
-- Installation from requirements.txt fails
-
-**Example:**
-```csharp
-try
-{
-    await runtime.InstallRequirementsAsync("nonexistent.txt");
-}
-catch (RequirementsFileException ex)
-{
-    Console.WriteLine($"Requirements file failed: {ex.RequirementsFilePath}");
-    Console.WriteLine($"Output: {ex.InstallationOutput}");
-}
-```
-
-### PythonExecutionException
-
-Base exception for Python execution failures.
-
-**Properties:**
-- `ExitCode` (int?): Exit code from the Python process
-- `StandardError` (string?): Standard error output
-
-**When thrown:**
-- Process execution fails (not just non-zero exit code)
-- Process cannot be started
-
-**Example:**
-```csharp
-try
-{
-    var result = await runtime.ExecuteCommandAsync("invalid syntax here");
-}
-catch (PythonExecutionException ex)
-{
-    Console.WriteLine($"Execution failed: {ex.Message}");
-    Console.WriteLine($"Exit code: {ex.ExitCode}");
-    Console.WriteLine($"Error: {ex.StandardError}");
-}
-```
-
-**Note:** A non-zero exit code does not always throw an exception. Check `result.ExitCode` for execution status.
-
-### PythonNetExecutionException
-
-Thrown when Python.NET code execution fails.
-
-**Properties:**
-- `PythonExceptionType` (string?): Type of the Python exception
-- `PythonTraceback` (string?): Python traceback information
-- Inherits `ExitCode` and `StandardError` from base
-
-**When thrown:**
-- Python.NET execution raises an exception
-- Python code execution fails in-process
-
-**Example:**
-```csharp
-try
-{
-    // Using PythonNetManager
-    var runtime = await netManager.GetOrCreateInstanceAsync("3.12.0");
-    await runtime.ExecuteCommandAsync("raise ValueError('test')");
-}
-catch (PythonNetExecutionException ex)
-{
-    Console.WriteLine($"Python exception type: {ex.PythonExceptionType}");
-    Console.WriteLine($"Traceback: {ex.PythonTraceback}");
-}
-```
-
-### PythonNetInitializationException
-
-Thrown when Python.NET initialization fails.
-
-**Properties:**
-- `PythonInstallPath` (string?): Path to the Python installation
-
-**When thrown:**
-- Python.NET cannot initialize
-- Python DLL not found
-- Python.NET initialization error
-
-**Example:**
-```csharp
-try
-{
-    var netManager = new PythonNetManager("./instances", githubClient);
-    var runtime = await netManager.GetOrCreateInstanceAsync("3.12.0");
-}
-catch (PythonNetInitializationException ex)
-{
-    Console.WriteLine($"Python.NET initialization failed: {ex.Message}");
-    Console.WriteLine($"Python path: {ex.PythonInstallPath}");
-}
-```
-
-### VirtualEnvironmentNotFoundException
-
-Thrown when a virtual environment is not found.
-
-**Properties:**
-- `VirtualEnvironmentName` (string?): Name of the virtual environment
-
-**When thrown:**
-- Virtual environment doesn't exist when expected
-- Virtual environment path is invalid
-
-**Example:**
-```csharp
-try
-{
-    var rootRuntime = (BasePythonRootRuntime)runtime;
-    await rootRuntime.DeleteVirtualEnvironmentAsync("nonexistent");
-}
-catch (VirtualEnvironmentNotFoundException ex)
-{
-    Console.WriteLine($"Virtual environment not found: {ex.VirtualEnvironmentName}");
-}
-```
+For a timeout enforced by the runner itself (which kills the process and throws `PythonProcessException(Kind = Timeout)` rather than just cancelling the await), use `RunOptions.Timeout` instead.
 
 ## Best Practices
 
-### Always Check Exit Codes
+### Catch by Kind, not by inheritance depth
 
-Even when exceptions aren't thrown, check exit codes:
-
-```csharp
-var result = await runtime.ExecuteCommandAsync("some-command");
-if (result.ExitCode != 0)
-{
-    Console.WriteLine($"Command failed with exit code {result.ExitCode}");
-    Console.WriteLine($"Error: {result.StandardError}");
-}
-```
-
-### Handle Specific Exceptions
-
-Catch specific exceptions for better error handling:
+There are only two types, so branch on `Kind`:
 
 ```csharp
 try
 {
-    await runtime.InstallPackageAsync("package-name");
+    var env = await PythonEnvironment.GetEnvironmentAsync("3.13", "myapp");
 }
-catch (PackageInstallationException ex) when (ex is InvalidPackageSpecificationException)
+catch (PythonException ex)
 {
-    // Handle invalid specification
-}
-catch (PackageInstallationException ex)
-{
-    // Handle other package installation errors
-    Console.WriteLine($"Installation output: {ex.InstallationOutput}");
+    switch (ex.Kind)
+    {
+        case PythonErrorKind.Offline:
+        case PythonErrorKind.DownloadFailed:
+            // retry later, or fall back to a bundled runtime package
+            break;
+        case PythonErrorKind.Locked:
+            // another process is mid-install; retry with backoff
+            break;
+        default:
+            throw;
+    }
 }
 ```
 
-### Log Exception Details
-
-Use structured logging to capture exception details:
+### Always check `Success` when `ThrowOnError = false`
 
 ```csharp
-try
+var result = await env.RunAsync("script.py", options: new RunOptions { ThrowOnError = false });
+if (!result.Success)
 {
-    var runtime = await manager.GetOrCreateInstanceAsync(version);
+    _logger.LogWarning("script.py exited {ExitCode}: {Error}", result.ExitCode, result.StandardError);
 }
-catch (InstanceNotFoundException ex)
+```
+
+### Log the Kind alongside the message
+
+```csharp
+catch (PythonException ex)
 {
-    _logger.LogError(
-        "Python instance not found: Version={Version}, BuildDate={BuildDate}",
-        ex.PythonVersion,
-        ex.BuildDate?.ToString("yyyy-MM-dd") ?? "latest");
+    _logger.LogError(ex, "Python operation failed: {Kind}", ex.Kind);
     throw;
 }
 ```
 
-### Provide User-Friendly Messages
-
-Transform exceptions into user-friendly messages:
-
-```csharp
-try
-{
-    await runtime.InstallPackageAsync(packageName);
-}
-catch (PackageInstallationException ex)
-{
-    var userMessage = $"Failed to install {ex.PackageSpecification}. " +
-                     $"Please check the package name and try again.";
-    throw new UserFriendlyException(userMessage, ex);
-}
-```
-
-### Handle Metadata Corruption
-
-If metadata is corrupted, provide recovery options:
-
-```csharp
-try
-{
-    var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
-}
-catch (MetadataCorruptedException ex)
-{
-    _logger.LogWarning(ex, "Metadata corrupted, attempting recovery");
-    
-    // Option 1: Delete and reinstall
-    await manager.DeleteInstanceAsync("3.12.0");
-    var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
-    
-    // Option 2: Manual cleanup
-    // Directory.Delete(ex.MetadataFilePath, true);
-}
-```
-
-### Handle Network Issues
-
-GitHub API calls can fail due to network issues:
-
-```csharp
-try
-{
-    var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
-}
-catch (HttpRequestException ex)
-{
-    _logger.LogError(ex, "Network error while downloading Python distribution");
-    // Implement retry logic or fallback
-}
-catch (InstanceNotFoundException ex)
-{
-    // Handle case where version doesn't exist
-}
-```
-
-## Common Error Scenarios
-
-### Python Version Not Available
-
-```csharp
-try
-{
-    var runtime = await manager.GetOrCreateInstanceAsync("99.99.99");
-}
-catch (InstanceNotFoundException)
-{
-    // Check available versions
-    var versions = await manager.ListAvailableVersionsAsync();
-    Console.WriteLine("Available versions:");
-    foreach (var v in versions.Take(10))
-    {
-        Console.WriteLine($"  {v}");
-    }
-}
-```
-
-### Package Installation Failure
-
-```csharp
-var result = await runtime.InstallPackageAsync("package-name");
-if (result.ExitCode != 0)
-{
-    Console.WriteLine($"Installation failed: {result.StandardError}");
-    
-    // Check if package exists on PyPI
-    var packageInfo = await runtime.GetPackageMetadataAsync("package-name");
-    if (packageInfo == null)
-    {
-        Console.WriteLine("Package not found on PyPI");
-    }
-}
-```
-
-### Virtual Environment Creation Failure
-
-```csharp
-var rootRuntime = (BasePythonRootRuntime)runtime;
-
-try
-{
-    var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync("myenv"); // uv venv by default
-}
-catch (PythonInstallationException ex)
-{
-    _logger.LogError(ex, "Venv creation failed");
-
-    // Verify Python installation
-    var versionResult = await runtime.ExecuteCommandAsync("--version");
-    if (versionResult.ExitCode != 0)
-    {
-        await manager.DeleteInstanceAsync("3.12.0");
-        runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
-    }
-
-    // Or retry with pip/venv fallback
-    var pipVenv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync("myenv", useUv: false);
-}
-```
-
-### uv Not Available
-
-When `useUv: true` (default) and uv cannot be detected or installed, package/venv operations may throw `InvalidOperationException` from internal `EnsureUvAvailableAsync` / `EnsurePackageManagerAvailableAsync` paths. Either install uv (default instance creation calls `EnsureUvInstalledAsync`), set `ManagerConfiguration.UvPath`, or pass **`useUv: false`** for pip-based operations.
-
 ## See Also
 
-- [API Reference](API-Reference.md)
+- [Quick Reference](Quick-Reference.md)
 - [Examples](Examples.md)
 - [Troubleshooting](Troubleshooting.md)
-

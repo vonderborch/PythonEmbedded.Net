@@ -27,7 +27,6 @@
         <PackageReference Include="NUnit" Version="4.2.2"/>
         <PackageReference Include="NUnit.Analyzers" Version="4.3.0"/>
         <PackageReference Include="NUnit3TestAdapter" Version="4.6.0"/>
-        <PackageReference Include="Octokit" Version="14.0.0"/>
     </ItemGroup>
 
     <ItemGroup>
@@ -36,6 +35,10 @@
 
     <ItemGroup>
       <ProjectReference Include="..\..\..\source\PythonEmbedded.Net\PythonEmbedded.Net.csproj" />
+      <ProjectReference Include="..\..\..\source\PackageManagers\PythonEmbedded.Net.PackageManagers.Conda\PythonEmbedded.Net.PackageManagers.Conda.csproj" />
+      <ProjectReference Include="..\..\..\source\PackageManagers\PythonEmbedded.Net.PackageManagers.Poetry\PythonEmbedded.Net.PackageManagers.Poetry.csproj" />
+      <ProjectReference Include="..\..\..\source\PackageManagers\PythonEmbedded.Net.PackageManagers.Uv\PythonEmbedded.Net.PackageManagers.Uv.csproj" />
+      <ProjectReference Include="..\..\..\source\Runners\PythonEmbedded.Net.Runners.PythonNet\PythonEmbedded.Net.Runners.PythonNet.csproj" />
       <ProjectReference Include="..\PythonEmbedded.Net.Test\PythonEmbedded.Net.Test.csproj" />
     </ItemGroup>
 

@@ -1,97 +1,78 @@
 # PythonEmbedded.Net
 
-A .NET library for managing local, embeddable Python instances. Download, install, manage, and execute Python environments directly within .NET applications without requiring system-wide Python installations.
+Embedded Python for .NET that feels like magic.
 
 ![Logo](https://raw.githubusercontent.com/vonderborch/PythonEmbedded.Net/refs/heads/main/logo.png)
 
-## Installation
-
-### Nuget
-
 [![NuGet version (PythonEmbedded.Net)](https://img.shields.io/nuget/v/PythonEmbedded.Net.svg?style=flat-square)](https://www.nuget.org/packages/PythonEmbedded.Net/)
 
-The recommended installation approach is to use the available nuget
-package: [PythonEmbedded.Net](https://www.nuget.org/packages/PythonEmbedded.Net/)
+Give your .NET app its own Python — downloaded, isolated, and managed automatically. No system Python, no PATH surgery, no "please install Python 3.x first" in your README.
 
-### Clone
+```csharp
+using PythonEmbedded.Net;
 
-Alternatively, you can clone this repo and reference the PythonEmbedded.Net project in your project.
+var env = await PythonEnvironment.GetEnvironmentAsync("3.13", "myapp");
+await env.Packages.InstallAsync("requests");
+var result = await env.RunAsync("script.py");
+Console.Write(result.StandardOutput);
+```
 
-## Features
+That first line downloads a standalone CPython from [python-build-standalone](https://github.com/astral-sh/python-build-standalone) (checksum-verified, cached), creates a virtual environment named `myapp`, and hands you a ready-to-use handle. Environment names are always explicit, so the same Python version can back multiple independent environments. Subsequent calls return in milliseconds. Every method also has a synchronous twin (`PythonEnvironment.GetEnvironment`, `env.Run`, ...).
 
-- ✅ **Automatic Python Distribution Management**: Download and install Python distributions from [python-build-standalone](https://github.com/astral-sh/python-build-standalone)
-- ✅ **Fast Package Management with uv**: [uv](https://github.com/astral-sh/uv) is the default package manager (auto-installed); opt into classic `python -m pip` / `python -m venv` with `useUv: false`
-- ✅ **Multiple Instance Support**: Manage multiple Python versions and build dates simultaneously
-- ✅ **Smart Version Matching**: 
-  - Exact versions (e.g., "3.12.5") match exactly
-  - Partial versions (e.g., "3.12") automatically find the latest patch version (e.g., "3.12.19")
-- ✅ **Virtual Environment Management**: Create, clone, export, and import virtual environments for each Python instance
-- ✅ **Package Installation**: Install, list, uninstall, and upgrade packages; requirements.txt and pyproject.toml; requirements checking and PyPI search
-- ✅ **Python Execution**: Execute Python code via subprocess or in-process using Python.NET
-- ✅ **Two Execution Modes**: 
-  - **PythonManager**: Subprocess-based execution (standard Python execution)
-  - **PythonNetManager**: Python.NET-based execution (in-process, high-performance)
-- ✅ **Cross-Platform**: Supports Windows, Linux, and macOS
-- ✅ **Archive Format Support**: Supports multiple archive formats (zip, tar.gz, tar.bz2, tar.bz, tar.zst)
-- ✅ **Modern C# Design**: Abstract classes for extensibility, dependency injection support, IDisposable for resource management
-- ✅ **Structured Logging**: Full support for Microsoft.Extensions.Logging
-- ✅ **Performance Optimizations**: Optional caching for GitHub API responses, object pooling for frequently allocated objects
+## Packages
+
+| Package | What it adds |
+| --- | --- |
+| `PythonEmbedded.Net` | Everything above: interpreter acquisition, venvs, pip, subprocess execution, live process handles. Fully functional alone. |
+| `PythonEmbedded.Net.Runtime.Python311`–`Python315` | Bundled Python archives for fully **offline** use — reference one and `GetEnvironment("3.13", name)` needs zero network and zero configuration. Auto-refreshed when upstream releases. |
+| `PythonEmbedded.Net.PackageManagers.Uv` | [uv](https://github.com/astral-sh/uv)-backed env creation and installs (~10x faster than pip). |
+| `PythonEmbedded.Net.PackageManagers.Conda` | Conda-ecosystem environments via a self-provisioned [micromamba](https://mamba.readthedocs.io/) — for conda-only packages (CUDA, geospatial, ...). |
+| `PythonEmbedded.Net.PackageManagers.Poetry` | Installs a `pyproject.toml` project's dependencies with Poetry. |
+| `PythonEmbedded.Net.Runners.PythonNet` | In-process execution via [Python.NET](https://github.com/pythonnet/pythonnet) — no subprocess overhead, direct .NET↔Python interop. |
+
+Satellites plug in with one line — no registration, no reflection:
+
+```csharp
+PythonEnvironment.Configure(o =>
+{
+    o.Installer = new UvInstaller();       // packages via uv
+    o.Runner = new InProcessRunner();      // execution via Python.NET
+});
+```
+
+## More than one-shot scripts
+
+```csharp
+// Long-lived processes (servers, workers): streamed output, stdin, kill-on-dispose.
+await using var server = env.Start("server.py", ["--port", "8080"]);
+server.OutputLine += line => Console.WriteLine($"[py] {line}");
+
+// Failures throw by default, carrying exit code + stdout/stderr:
+try { await env.RunAsync("flaky.py"); }
+catch (PythonProcessException ex) { Console.WriteLine(ex.Result.StandardError); }
+
+// Or opt out: new RunOptions { ThrowOnError = false }
+```
+
+## Extensible by design
+
+Three small interfaces cover every axis, and everything else is sealed:
+
+- **`IPythonSource`** — where interpreters come from (bundled archives, astral downloads, your own directories, a future compile-from-source).
+- **`IPackageInstaller`** — how environments are created and packages managed (pip, uv, conda, poetry, yours).
+- **`IPythonRunner`** — how code executes (subprocess, in-process, yours).
+
+Implement one, hand it to `PythonEnvironment.Configure`, done.
+
+## Documentation
+
+Start with [Docs/Getting-Started.md](Docs/Getting-Started.md); the full index is in [Docs/README.md](Docs/README.md).
 
 ## Requirements
 
-- .NET 9.0 or .NET 10.0 (library version **1.4.x**)
-- Octokit (included)
-- Python.NET (included, optional - only needed for PythonNetManager)
-- Tomlyn (for pyproject.toml support, included)
-
-## Quick Start
-
-## Platform Support
-
-The library automatically detects your platform and downloads the appropriate Python distribution from [python-build-standalone](https://github.com/astral-sh/python-build-standalone):
-
-- **Windows**: x64, x86 (Windows 7+)
-- **Linux**: x64, ARM64, ARMv7 (GNU libc and musl)
-- **macOS**: Intel (x64), Apple Silicon (ARM64)
-
-## Archive Format Support
-
-The library supports multiple archive formats for Python distributions:
-
-- **`.zip`** - Standard ZIP archives (Windows, cross-platform)
-- **`.tar.gz`** - Gzip-compressed tar archives (Linux, macOS)
-- **`.tar.bz2`** - Bzip2-compressed tar archives (Linux, macOS)
-- **`.tar.bz`** - Bzip-compressed tar archives (Linux, macOS)
-- **`.tar.zst`** - Zstandard-compressed tar archives (Linux, macOS)
-
-Archive extraction uses system tools (`tar` command) where available. The library automatically detects and handles the appropriate format based on the downloaded asset.
-
-## Design Principles
-
-This library follows modern C# best practices:
-
-- **Abstract Base Classes**: Extensible architecture using abstract base classes
-- **Dependency Injection**: Support for DI containers with logger factories and caching
-- **Resource Management**: IDisposable support for Python.NET runtimes
-- **Modern C# Features**: Records, file-scoped namespaces, collection expressions, pattern matching, ConfigureAwait(false)
-- **Structured Logging**: Full Microsoft.Extensions.Logging integration
-- **Separation of Concerns**: Process execution extracted to a service
-- **Performance Optimizations**: Optional caching, object pooling for hot paths
-
-## Contributing
-
-Contributions are welcome! Please read the contributing guidelines and submit pull requests.
+- .NET 9.0 or later
+- Windows, macOS, or Linux (x64 / arm64)
 
 ## License
 
-MIT License - see LICENSE file for details.
-
-## Acknowledgments
-
-This library utilizes [python-build-standalone](https://github.com/astral-sh/python-build-standalone) by [astral-sh](https://github.com/astral-sh) for providing high-quality, redistributable Python distributions. We are not associated with astral-sh, but we thank them for their fantastic work that makes this library possible.
-
-## Links
-
-- [Python Build Standalone](https://github.com/astral-sh/python-build-standalone) - Source of Python distributions
-- [Python.NET](https://github.com/pythonnet/pythonnet) - Python.NET integration
-- [Octokit](https://github.com/octokit/octokit.net) - GitHub API client
+MIT — see [LICENSE](LICENSE).

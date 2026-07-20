@@ -1,0 +1,38 @@
+name: Refresh runtime packages
+
+# Daily: if astral-sh/python-build-standalone published a new tag, regenerate the
+# runtime manifest + per-project archives.props and open a PR. Merging that PR
+# triggers release.yml's runtime-package publish job.
+
+on:
+  schedule:
+    - cron: "42 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Regenerate manifest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 source/Runtimes/tools/update-manifest.py
+
+      - name: Open PR if anything changed
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "Update runtime manifest to latest python-build-standalone release"
+          title: "Update runtime packages to latest python-build-standalone release"
+          body: |
+            Automated update of `source/Runtimes/manifest.json` and the per-project
+            `archives.props` files to the latest astral-sh/python-build-standalone release.
+
+            Merging publishes updated `PythonEmbedded.Net.Runtime.*` packages.
+          branch: auto/refresh-runtimes
+          delete-branch: true

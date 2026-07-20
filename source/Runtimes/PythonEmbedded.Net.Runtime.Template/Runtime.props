@@ -1,0 +1,36 @@
+﻿<!-- Shared packaging setup for PythonEmbedded.Net.Runtime.* packages.
+     Each runtime csproj imports archives.props (generated) then this file. -->
+<Project>
+    <PropertyGroup>
+        <TargetFramework>netstandard2.0</TargetFramework>
+        <IncludeBuildOutput>false</IncludeBuildOutput>
+        <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+        <NoWarn>$(NoWarn);NU5128</NoWarn>
+
+        <!-- Package version carries the Python version + astral tag, e.g. 3.13.14.20260623. -->
+        <Version>$(PyRuntimeVersion)</Version>
+        <AssemblyVersion>1.0.0.0</AssemblyVersion>
+        <FileVersion>1.0.0.0</FileVersion>
+
+        <Authors>Christian Webber</Authors>
+        <Company>Christian Webber</Company>
+        <Copyright>(c) 2026</Copyright>
+        <Description>Bundled python-build-standalone $(PyPythonVersion) archives (tag $(PyReleaseTag)) for fully-offline use with PythonEmbedded.Net. Referencing this package makes Python.GetEnvironment("$(PyPythonVersion)") work with zero configuration and no network access.</Description>
+        <PackageProjectUrl>https://github.com/vonderborch/PythonEmbedded.Net</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/vonderborch/PythonEmbedded.Net</RepositoryUrl>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <PackageIcon>logo.png</PackageIcon>
+        <PackageTags>Python, Local, Embedded, Offline</PackageTags>
+
+        <PyArchiveDir>$(MSBuildProjectDirectory)/archives/</PyArchiveDir>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <None Include="$(MSBuildThisFileDirectory)../../../logo.png" Pack="True" PackagePath="" Link="logo.png" />
+        <!-- Archives land in archives/ at build time (see Runtime.targets) and pack from there. -->
+        <None Include="@(PyArchive->'$(PyArchiveDir)%(Identity)')" Pack="true" PackagePath="archives" Visible="false" />
+        <!-- The consumer-side hookup, packed under the package's own id. -->
+        <None Include="$(MSBuildThisFileDirectory)RuntimeConsumer.targets" Pack="true"
+              PackagePath="build/$(MSBuildProjectName).targets;buildTransitive/$(MSBuildProjectName).targets" Visible="false" />
+    </ItemGroup>
+</Project>

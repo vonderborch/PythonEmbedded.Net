@@ -457,3 +457,9 @@ $RECYCLE.BIN/
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
+
+# Test fixtures (fetched by test/tools/fetch-fixtures.sh)
+test/fixtures/
+
+# Runtime package archives (downloaded at pack time)
+source/Runtimes/*/archives/

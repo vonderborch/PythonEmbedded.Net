@@ -1,6 +1,6 @@
 # Contributing to PythonEmbedded.Net
 
-Thank you for your interest in contributing to PythonEmbedded.Net! This document provides guidelines and instructions for contributing.
+Thank you for your interest in contributing! This document covers the repo layout, coding standards, and how to build/test the 2.x codebase.
 
 ## Table of Contents
 
@@ -11,6 +11,7 @@ Thank you for your interest in contributing to PythonEmbedded.Net! This document
 - [Testing](#testing)
 - [Submitting Changes](#submitting-changes)
 - [Documentation](#documentation)
+- [Architecture Guidelines](#architecture-guidelines)
 
 ## Code of Conduct
 
@@ -29,24 +30,18 @@ By participating in this project, you agree to maintain a respectful and inclusi
 
 ### Prerequisites
 
-- .NET 9.0 or .NET 10.0 SDK
-- Visual Studio, Rider, or VS Code with C# extension
+- .NET 9.0 and .NET 10.0 SDKs
+- Visual Studio, Rider, or VS Code with the C# extension
 - Git
 
 ### Building the Project
 
 ```bash
-# Clone the repository
 git clone https://github.com/vonderborch/PythonEmbedded.Net.git
 cd PythonEmbedded.Net
 
-# Restore dependencies
 dotnet restore
-
-# Build the solution
 dotnet build
-
-# Run tests
 dotnet test
 ```
 
@@ -55,140 +50,127 @@ dotnet test
 ```
 PythonEmbedded.Net/
 ├── source/
-│   └── PythonEmbedded.Net/                      # Main library source
-│       ├── Exceptions/                          # Custom exceptions
-│       ├── Helpers/                             # Utility classes
-│       ├── Models/                              # Data models
-│       ├── Services/                            # Service implementations
-│       └── *.cs                                 # Core classes
+│   ├── PythonEmbedded.Net/                       # core library — functional alone
+│   │   └── Internals/                            # PythonHost, DiskLock, sources, default installer/runner
+│   ├── PackageManagers/                          # IPackageInstaller satellites
+│   │   ├── PythonEmbedded.Net.PackageManagers.Uv/
+│   │   ├── PythonEmbedded.Net.PackageManagers.Conda/
+│   │   └── PythonEmbedded.Net.PackageManagers.Poetry/
+│   ├── Runners/                                  # IPythonRunner satellites
+│   │   └── PythonEmbedded.Net.Runners.PythonNet/
+│   └── Runtimes/                                 # offline runtime packages
+│       ├── manifest.json                         # committed: astral tag + asset URLs + sha256
+│       ├── tools/update-manifest.py               # refreshes manifest.json from astral releases
+│       ├── PythonEmbedded.Net.Runtime.Template/   # shared .props/.targets
+│       └── PythonEmbedded.Net.Runtime.Python3xx/  # one project per minor version
 ├── test/
-│   └── automated/
-│       ├── PythonEmbedded.Net.IntegrationTest/  # Integration tests
-│       └── PythonEmbedded.Net.Test/             # Unit tests
-└── Docs/                                        # Documentation
+│   ├── automated/
+│   │   ├── PythonEmbedded.Net.Test/               # unit tests, offline, NUnit
+│   │   └── PythonEmbedded.Net.IntegrationTest/    # real archives; [Category("RequiresNetwork")] tagging
+│   ├── manual/PythonEmbedded.Net.DevTest/         # console playground
+│   ├── tools/fetch-fixtures.sh                    # downloads real archives for local integration tests
+│   └── fixtures/                                  # gitignored; filled by fetch-fixtures.sh
+└── Docs/                                          # documentation
 ```
+
+The category is visible in the folder and the package name itself — `PackageManagers.*` implement `IPackageInstaller`, `Runners.*` implement `IPythonRunner`. There is no other place package managers or runners live.
 
 ## Coding Standards
 
-### C# Style Guide
+This project stays deliberately small: one core assembly, one namespace, a handful of public types, no reflection, no registries, no two-phase construction. New satellites are the only expected growth path — new capability is a new class implementing `IPythonSource`, `IPackageInstaller`, or `IPythonRunner`, not a new layer in core.
 
-This project follows modern C# best practices:
+### C# Style
 
-- **File-scoped namespaces**: `namespace PythonEmbedded.Net;`
-- **Records for value objects**: Use `record` types for immutable data
-- **Async/Await**: Use `ConfigureAwait(false)` in library code
-- **Abstract base classes**: Public APIs extend `BasePythonManager`, `BasePythonRuntime`, etc.; use `IProcessExecutor` and similar interfaces for cross-cutting services
-- **Nullable reference types**: Enabled, use `?` appropriately
-- **Collection expressions**: Use `[]` for arrays when appropriate
+- File-scoped namespaces: `namespace PythonEmbedded.Net;`
+- Records for value objects (`PythonVersion`, `RunOptions`, `PythonResult`, `PackageRequest`, ...)
+- Sealed classes for handles and engines unless there's a concrete reason to allow inheritance
+- Nullable reference types enabled
+- `ConfigureAwait(false)` throughout library code
+- **Every public async method has a synchronous twin**: the async method is the implementation; the sync twin is a thin `GetAwaiter().GetResult()` wrapper. Add both when adding a new public method.
 
 ### Naming Conventions
 
-- **Classes**: PascalCase (e.g., `PythonManager`)
-- **Interfaces**: PascalCase with `I` prefix (e.g., `IProcessExecutor`)
-- **Abstract classes**: PascalCase (e.g., `BasePythonRuntime`, `BasePythonRootRuntime`)
-- **Methods**: PascalCase (e.g., `ExecuteCommandAsync`)
-- **Parameters**: camelCase (e.g., `pythonVersion`)
-- **Private fields**: camelCase with `_` prefix (e.g., `_logger`)
+- Classes/records/interfaces: PascalCase, interfaces prefixed with `I` (`IPythonSource`)
+- Methods: PascalCase, async methods suffixed `Async` (`RunAsync`), sync twin without the suffix (`Run`)
+- Parameters: camelCase
+- Private fields: camelCase with `_` prefix
 
 ### Code Organization
 
-- One class per file
-- Group related functionality in namespaces
-- Use regions sparingly, prefer clear organization
-- Keep methods focused and single-purpose
+- One type per file, file name matches the type
+- `internal` for everything that isn't part of the public interface surface — see the "Public API surface" list in the design plan for what's meant to stay public
+- Keep methods focused; prefer a few extra small internal helpers over one large method, but don't add abstraction layers for a single call site
 
 ### Documentation
 
-- XML documentation comments for all public APIs
-- Inline comments for complex logic
-- Clear, descriptive variable and method names
-
-Example:
-
-```csharp
-/// <summary>
-/// Executes a Python command and returns the result.
-/// </summary>
-/// <param name="command">The Python command to execute.</param>
-/// <param name="cancellationToken">Cancellation token.</param>
-/// <returns>The execution result containing exit code, stdout, and stderr.</returns>
-public async Task<PythonExecutionResult> ExecuteCommandAsync(
-    string command,
-    CancellationToken cancellationToken = default)
-{
-    // Implementation
-}
-```
+- XML doc comments on public APIs
+- Comments only where the *why* isn't obvious from the code — no comments restating what a line does
 
 ## Testing
 
 ### Test Structure
 
-- **Unit tests**: Test individual components with mocks
-- **Integration tests**: Test with real Python installations (marked `[Ignore]` for CI)
+- **Unit tests** (`PythonEmbedded.Net.Test`): fully offline, use fakes (`FakeSource`, `FakeInstaller`, `FakeRunner`) and a temp root per test — no real Python, no network.
+- **Integration tests** (`PythonEmbedded.Net.IntegrationTest`): run against real interpreters. Local fixture archives cover install→venv→run without network; tests tagged `[Category("RequiresNetwork")]` hit the real astral API and are skipped unless explicitly included.
+
+### Running Tests
+
+```bash
+# All unit tests (offline, fast)
+dotnet test test/automated/PythonEmbedded.Net.Test
+
+# Integration tests — fetch fixtures first
+./test/tools/fetch-fixtures.sh
+dotnet test test/automated/PythonEmbedded.Net.IntegrationTest --filter "Category!=RequiresNetwork"
+
+# Everything, including real network calls
+dotnet test test/automated/PythonEmbedded.Net.IntegrationTest
+```
 
 ### Writing Tests
 
 ```csharp
 [TestFixture]
-public class PythonManagerTests
+public class PythonHostTests
 {
     [Test]
-    public void Constructor_WithValidParameters_CreatesInstance()
+    public async Task GetEnvironmentAsync_Reuses_Existing_Install()
     {
-        // Arrange
-        var githubClient = new GitHubClient(new ProductHeaderValue("Test"));
-        
-        // Act
-        var manager = new PythonManager("./test-instances", githubClient);
-        
-        // Assert
-        Assert.NotNull(manager);
+        using var root = new TempRoot();
+        var host = new PythonHost(new PythonOptions
+        {
+            RootDirectory = root.Path,
+            Sources = [new FakeSource()],
+        });
+
+        var env1 = await host.GetEnvironmentAsync("3.13", "default");
+        var env2 = await host.GetEnvironmentAsync("3.13", "default");
+
+        Assert.That(env2.Directory, Is.EqualTo(env1.Directory));
     }
 }
 ```
 
-### Running Tests
-
-```bash
-# Run all tests
-dotnet test
-
-# Run specific test project
-dotnet test test/automated/PythonEmbedded.Net.Test/PythonEmbedded.Net.Test.csproj
-
-# Run with coverage
-dotnet test /p:CollectCoverage=true
-```
-
-### Test Utilities
-
-Use test utilities from `TestUtilities` namespace:
-- `TestDirectoryHelper`: Create and cleanup test directories
-- `MockPythonInstanceHelper`: Create mock Python installations
+`InternalsVisibleTo` exposes `PythonHost` and other internals to both test projects, so tests construct the engine directly rather than going through the static `PythonEnvironment` facade (which is covered separately by facade-level smoke tests).
 
 ## Submitting Changes
 
 ### Before Submitting
 
-1. **Ensure tests pass**: Run `dotnet test`
-2. **Build succeeds**: Run `dotnet build`
-3. **Code formatting**: Ensure consistent formatting
-4. **Documentation**: Update XML docs and markdown docs as needed
+1. `dotnet build` — zero warnings
+2. `dotnet test` on the unit suite (and integration suite where relevant)
+3. Update docs in `Docs/` if the public API changed
+4. Keep the change focused — one logical change per PR
 
 ### Pull Request Process
 
-1. **Create a descriptive title**: Clearly describe the change
-2. **Write a detailed description**:
-   - What changed and why
-   - How to test the changes
-   - Related issues (if any)
-3. **Keep changes focused**: One logical change per PR
-4. **Update documentation**: Include relevant doc updates
+1. Descriptive title
+2. Description covering what changed, why, and how to test it
+3. Reference related issues
 
 ### Commit Messages
 
-Follow conventional commit format:
+Conventional commits:
 
 ```
 type(scope): subject
@@ -198,92 +180,58 @@ body (optional)
 footer (optional)
 ```
 
-Types:
-- `feat`: New feature
-- `fix`: Bug fix
-- `docs`: Documentation changes
-- `refactor`: Code refactoring
-- `test`: Test changes
-- `chore`: Maintenance tasks
+Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`.
 
-Examples:
+Example:
 
 ```
-feat(runtime): Add support for custom process executor
+feat(packagemanagers): add PixiInstaller satellite
 
-Allow injection of IProcessExecutor for testing and customization.
-
-Closes #123
-```
-
-```
-fix(manager): Handle missing Python executable gracefully
-
-Throw PythonNotInstalledException with clear error message when
-executable is not found.
+Implements IPackageInstaller against pixi; self-provisions the pixi
+binary the same way UvInstaller provisions uv.
 ```
 
 ## Documentation
 
-### Code Documentation
+Update the relevant file in `Docs/` alongside any public API change:
 
-- Add XML documentation for all public APIs
-- Keep documentation up-to-date with code changes
-- Include examples in XML docs for complex APIs
+- **Quick-Reference.md** — API surface changes
+- **Examples.md** — new usage patterns
+- **Architecture.md** — design/interface changes
+- **Error-Handling.md** — new `PythonErrorKind` values
+- **Troubleshooting.md** — new failure modes worth documenting
 
-### Markdown Documentation
-
-Update relevant docs in `Docs/` directory:
-
-- **API-Reference.md**: API changes
-- **Examples.md**: New usage examples
-- **Architecture.md**: Design changes
-- **Error-Handling.md**: New exceptions
-- **Troubleshooting.md**: Common issues
-
-### Documentation Format
-
-- Use clear, concise language
-- Include code examples
-- Cross-reference related docs
-- Keep table of contents updated
+Keep language concise, favor runnable code snippets, and cross-reference related docs at the bottom of the file.
 
 ## Architecture Guidelines
 
 ### Design Principles
 
-- **Abstract base classes**: Public runtime/manager APIs use `BasePython*` classes; add interfaces for services (e.g., `IProcessExecutor`) when mocking is needed
-- **Dependency injection**: Support DI for testability
-- **Separation of concerns**: Clear responsibility boundaries
-- **Resource management**: Implement IDisposable where appropriate
+- Three interfaces (`IPythonSource`, `IPackageInstaller`, `IPythonRunner`) cover every extensibility axis; there is no fourth without a strong reason
+- No reflection-based discovery — satellites are wired explicitly via `PythonEnvironment.Configure`
+- The filesystem is the index — no global metadata file; a marker file (`install.json`/`env.json`) written last is what makes a directory "real"
+- Two exception types only — new failure modes get a new `PythonErrorKind`, not a new exception class
 
-### Adding New Features
+### Adding a New Satellite
 
-1. **Design the public API**: Define methods on the appropriate `Base*` class or concrete type
-2. **Implement shared logic**: Use abstract base classes for common behavior
-3. **Add concrete implementations**: Implement specific behaviors (`PythonManager`, `PythonRootRuntime`, etc.)
-4. **Write tests**: Unit and integration coverage as appropriate
-5. **Update documentation**: API reference, examples, and troubleshooting
+1. New project under `source/PackageManagers/` or `source/Runners/`, named `PythonEmbedded.Net.PackageManagers.<Name>` or `PythonEmbedded.Net.Runners.<Name>`
+2. Implement the relevant interface; use `Tools.EnsureAsync` for any external binary the satellite needs
+3. Add it to `PythonEmbedded.Net.slnx` under the matching solution folder
+4. Cover it with integration tests under `PythonEmbedded.Net.IntegrationTest`
+5. Document it in `Examples.md` and the satellites table in `README.md` / `Quick-Reference.md`
 
-### Extending Existing Features
+### Adding a New Runtime Package
 
-- Maintain backward compatibility when possible
-- Use virtual methods for extensibility
-- Document breaking changes clearly
-- Provide migration guidance
+Runtime packages are generated, not hand-written — see `source/Runtimes/tools/update-manifest.py` and `.github/workflows/refresh-runtimes.yml`. Add a new minor version by adding a `PythonEmbedded.Net.Runtime.Python3xx/` project following the existing ones and letting the manifest refresh pick it up.
 
 ## Review Process
 
 - All PRs require review
-- Address review comments promptly
-- Maintain a constructive discussion
 - Tests must pass before merge
+- Keep discussion constructive and focused on the change
 
 ## Questions?
 
-- Check existing documentation
-- Review existing issues and PRs
-- Ask questions in issues or discussions
+Check existing documentation and issues first; open a new issue or discussion if it's not covered.
 
 Thank you for contributing to PythonEmbedded.Net!
-

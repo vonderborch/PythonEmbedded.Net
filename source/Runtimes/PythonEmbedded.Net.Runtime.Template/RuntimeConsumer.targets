@@ -1,0 +1,29 @@
+﻿<!-- Shipped inside every PythonEmbedded.Net.Runtime.* package (build/ + buildTransitive/).
+     Copies the archive matching the target platform into the consumer's output under
+     python-embedded-runtimes/, where PythonEmbedded.Net's bundled source finds it. -->
+<Project>
+    <PropertyGroup>
+        <!-- Explicit RID wins (publishing for another platform)... -->
+        <_PyEmbedTriple Condition="'$(RuntimeIdentifier)' == 'win-x64'">x86_64-pc-windows-msvc</_PyEmbedTriple>
+        <_PyEmbedTriple Condition="'$(RuntimeIdentifier)' == 'win-arm64'">aarch64-pc-windows-msvc</_PyEmbedTriple>
+        <_PyEmbedTriple Condition="'$(RuntimeIdentifier)' == 'osx-x64'">x86_64-apple-darwin</_PyEmbedTriple>
+        <_PyEmbedTriple Condition="'$(RuntimeIdentifier)' == 'osx-arm64'">aarch64-apple-darwin</_PyEmbedTriple>
+        <_PyEmbedTriple Condition="'$(RuntimeIdentifier)' == 'linux-x64'">x86_64-unknown-linux-gnu</_PyEmbedTriple>
+        <_PyEmbedTriple Condition="'$(RuntimeIdentifier)' == 'linux-arm64'">aarch64-unknown-linux-gnu</_PyEmbedTriple>
+
+        <!-- ...otherwise use the build machine's platform. -->
+        <_PyEmbedArch Condition="'$(_PyEmbedTriple)' == '' and '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'X64'">x86_64</_PyEmbedArch>
+        <_PyEmbedArch Condition="'$(_PyEmbedTriple)' == '' and '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'Arm64'">aarch64</_PyEmbedArch>
+        <_PyEmbedOs Condition="'$(_PyEmbedTriple)' == '' and $([MSBuild]::IsOSPlatform('Windows'))">pc-windows-msvc</_PyEmbedOs>
+        <_PyEmbedOs Condition="'$(_PyEmbedTriple)' == '' and $([MSBuild]::IsOSPlatform('OSX'))">apple-darwin</_PyEmbedOs>
+        <_PyEmbedOs Condition="'$(_PyEmbedTriple)' == '' and $([MSBuild]::IsOSPlatform('Linux'))">unknown-linux-gnu</_PyEmbedOs>
+        <_PyEmbedTriple Condition="'$(_PyEmbedTriple)' == '' and '$(_PyEmbedArch)' != '' and '$(_PyEmbedOs)' != ''">$(_PyEmbedArch)-$(_PyEmbedOs)</_PyEmbedTriple>
+    </PropertyGroup>
+
+    <ItemGroup Condition="'$(_PyEmbedTriple)' != ''">
+        <None Include="$(MSBuildThisFileDirectory)../archives/*-$(_PyEmbedTriple)-install_only.tar.gz"
+              CopyToOutputDirectory="PreserveNewest"
+              Link="python-embedded-runtimes/%(Filename)%(Extension)"
+              Visible="false" />
+    </ItemGroup>
+</Project>

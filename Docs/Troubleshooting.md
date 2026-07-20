@@ -1,624 +1,240 @@
 # Troubleshooting
 
-This guide helps you diagnose and resolve common issues with PythonEmbedded.Net **1.4.x**.
+Common issues with PythonEmbedded.Net 2.x and how to resolve them.
 
 ## Table of Contents
 
-- [Installation Issues](#installation-issues)
-- [Download Issues](#download-issues)
-- [Execution Issues](#execution-issues)
-- [Virtual Environment Issues](#virtual-environment-issues)
+- [Version Resolution Issues](#version-resolution-issues)
+- [Download / Network Issues](#download--network-issues)
+- [Locking Issues](#locking-issues)
+- [Environment Issues](#environment-issues)
 - [Package Installation Issues](#package-installation-issues)
-- [uv vs pip](#uv-vs-pip)
+- [Tool Provisioning (uv / conda / poetry)](#tool-provisioning-uv--conda--poetry)
 - [Python.NET Issues](#pythonnet-issues)
-- [Performance Issues](#performance-issues)
 - [Platform-Specific Issues](#platform-specific-issues)
+- [Debugging Tips](#debugging-tips)
 
-## Installation Issues
+## Version Resolution Issues
 
-### Python Instance Not Found
+### `PythonException` with `Kind = VersionNotFound`
 
-**Symptom:** `InstanceNotFoundException` when trying to get a Python instance.
-
-**Possible Causes:**
-1. Python version doesn't exist in python-build-standalone releases
-2. Network connectivity issues preventing download
-3. GitHub API rate limiting
-
-**Solutions:**
-
-```csharp
-// Check available versions first
-var versions = await manager.ListAvailableVersionsAsync();
-foreach (var version in versions.Take(20))
-{
-    Console.WriteLine($"Available: {version}");
-}
-
-// Use a valid version
-var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
-```
-
-**For GitHub API rate limiting:**
-```csharp
-// Use an authenticated GitHub client
-var githubClient = new GitHubClient(new ProductHeaderValue("MyApp"))
-{
-    Credentials = new Credentials("your-github-token")
-};
-
-var manager = new PythonManager("./instances", githubClient);
-```
-
-### Installation Verification Fails
-
-**Symptom:** Python installation completes but verification fails.
-
-**Possible Causes:**
-1. Archive extraction incomplete
-2. Corrupted download
-3. Platform-specific executable path issues
+**Possible causes:**
+1. The requested version doesn't exist in any configured source.
+2. `Offline = true` but no bundled runtime package or directory source has a matching archive.
+3. GitHub API rate limiting is preventing the astral source from resolving releases.
 
 **Solutions:**
 
 ```csharp
-// Delete and reinstall
-try
-{
-    await manager.DeleteInstanceAsync("3.12.0");
-    var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
-}
-catch (Exception ex)
-{
-    // Check logs for detailed error information
-    _logger.LogError(ex, "Reinstallation failed");
-}
+// List what's already installed locally
+var installs = await PythonEnvironment.ListInstallationsAsync();
+foreach (var i in installs) Console.WriteLine(i.Version);
+
+// Use a broader version request
+var env = await PythonEnvironment.GetEnvironmentAsync("3.13", "myapp");   // instead of an exact patch
 ```
 
-**Manual cleanup:**
-- Delete the instance directory manually
-- Clear any partial downloads from temp directories
-- Retry installation
-
-## Download Issues
-
-### Slow Downloads
-
-**Symptom:** Python distribution downloads are very slow.
-
-**Solutions:**
-- Use an authenticated GitHub client for higher rate limits
-- Check network connectivity
-- Consider using a proxy if in a restricted network
+For rate limiting, set a token:
 
 ```csharp
-var githubClient = new GitHubClient(new ProductHeaderValue("MyApp"))
-{
-    Credentials = new Credentials("github-token")
-};
+PythonEnvironment.Configure(o => o.GitHubToken = "ghp_...");
+// or set the GITHUB_TOKEN environment variable
 ```
 
-### Download Interrupted
+### `PythonException` with `Kind = UnsupportedPlatform`
 
-**Symptom:** Download fails partway through.
+The current OS/architecture has no matching python-build-standalone asset. Check [python-build-standalone releases](https://github.com/astral-sh/python-build-standalone/releases) for supported triples, or supply your own archive via `o.AddDirectorySource(path)`.
 
-**Solutions:**
-- The library should handle partial downloads, but if issues persist:
-- Clear temporary download directories
-- Check disk space availability
-- Verify network stability
+## Download / Network Issues
 
-### Archive Extraction Fails
+### `Kind = DownloadFailed`
 
-**Symptom:** `NotSupportedException` for `.tar.zst` or `.tar` archives.
-
-**Possible Causes:**
-- Missing system tools (zstd, tar)
+**Causes:** network interruption, or a checksum mismatch against `SHA256SUMS`.
 
 **Solutions:**
+- Clear `<root>/cache/downloads/` and retry — a corrupted cached archive is re-verified on next use, but a manual clear rules it out.
+- Check disk space; extraction happens under `<root>/tmp/` before the atomic move into `installs/`.
 
-**Windows:**
-- `.zip` archives should work without additional tools
-- For `.tar.zst`, install 7-Zip or use WSL
+### `Kind = Offline`
 
-**Linux/macOS:**
-```bash
-# Install required tools
-sudo apt-get install zstd tar  # Ubuntu/Debian
-brew install zstd              # macOS
-```
+An operation needed the network but `PythonOptions.Offline = true`. Either set `Offline = false`, or add a `PythonEmbedded.Net.Runtime.*` package / `AddDirectorySource` so the bundled/directory source can satisfy the request without network access.
 
-**Alternative:**
-- The library will prefer `.zip` when available
-- Check available archive formats for your platform
+## Locking Issues
 
-## Execution Issues
+### `Kind = Locked`
 
-### Command Execution Returns Non-Zero Exit Code
+Another process (or another `PythonHost` in the same process against the same root) is installing the same version and didn't finish within `LockTimeout` (default 10 minutes).
 
-**Symptom:** `result.ExitCode != 0` but no exception thrown.
+**Solutions:**
+- Increase `o.LockTimeout` if installs are slow (e.g. large archives over a slow link).
+- If a process crashed mid-install, its lock file is stale; `<root>/locks/` files are safe to delete manually once you've confirmed no process holds them — the marker-file-last design means an interrupted install leaves no `install.json`, so it's simply retried.
 
-**Note:** This is expected behavior. Python commands can fail without throwing exceptions.
+## Environment Issues
+
+### `Kind = EnvironmentFailed`
+
+**Possible causes:**
+1. The default `pip`/`venv` installer failed to run `python -m venv` (interpreter missing or corrupted).
+2. A satellite installer (uv/conda/poetry) failed to provision its tool.
+3. Insufficient permissions on `<root>/envs/`.
 
 **Solutions:**
 
 ```csharp
-var result = await runtime.ExecuteCommandAsync("some-command");
-if (result.ExitCode != 0)
-{
-    Console.WriteLine($"Command failed: {result.StandardError}");
-    // Handle failure appropriately
-}
+// Verify the base interpreter still runs
+var install = await PythonEnvironment.GetInstallationAsync("3.13");
+var result = await Subprocess.RunAsync(install.PythonExecutable, ["--version"]);
+Console.WriteLine(result.StandardOutput);
+
+// If corrupted, remove and reinstall
+await PythonEnvironment.RemoveAsync(install);
+var env = await PythonEnvironment.GetEnvironmentAsync("3.13", "myapp");
 ```
 
-### Process Execution Timeout
+### Environment not recreated when expected
 
-**Symptom:** Long-running Python commands don't complete.
-
-**Solutions:**
-
-```csharp
-using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
-try
-{
-    var result = await runtime.ExecuteCommandAsync(
-        "long-running-script.py",
-        cancellationToken: cts.Token);
-}
-catch (OperationCanceledException)
-{
-    Console.WriteLine("Command was cancelled due to timeout");
-}
-```
-
-### Python Executable Not Found
-
-**Symptom:** `PythonNotInstalledException` or process fails to start.
-
-**Possible Causes:**
-1. Python installation incomplete
-2. Wrong executable path for platform
-3. Missing executable permissions (Unix)
-
-**Solutions:**
-
-```csharp
-// Verify installation
-var versionResult = await runtime.ExecuteCommandAsync("--version");
-if (versionResult.ExitCode != 0)
-{
-    // Reinstall
-    await manager.DeleteInstanceAsync("3.12.0");
-    var newRuntime = await manager.GetOrCreateInstanceAsync("3.12.0");
-}
-```
-
-**Unix permissions:**
-```bash
-# Ensure executable has proper permissions
-chmod +x python-instances/python-3.12.0-*/bin/python3
-```
-
-## Virtual Environment Issues
-
-### Virtual Environment Creation Fails
-
-**Symptom:** `PythonInstallationException` or non-zero exit when creating a venv.
-
-**Possible Causes:**
-1. **uv path:** `useUv: true` (default) but uv not installed and `EnsureUvInstalledAsync` failed
-2. **pip/venv path:** `useUv: false` but `venv` module unavailable
-3. Insufficient permissions or invalid path
-
-**Solutions:**
-
-```csharp
-var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
-var rootRuntime = (BasePythonRootRuntime)runtime;
-
-// Default: uv venv
-try
-{
-    var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync("testenv");
-}
-catch (Exception ex)
-{
-    _logger.LogError(ex, "uv venv failed; try pip fallback or fix UvPath");
-}
-
-// Fallback: python -m venv + pip
-var pipVenv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync("testenv-pip", useUv: false);
-```
-
-If uv workflows fail but you only need standard tooling, create the instance with `useUv: false` as well.
-
-### Virtual Environment Not Recognized
-
-**Symptom:** Existing virtual environment not found or invalid.
-
-**Solutions:**
-
-```csharp
-// List existing venvs
-var rootRuntime = (BasePythonRootRuntime)runtime;
-var venvs = rootRuntime.ListVirtualEnvironments();
-foreach (var name in venvs)
-{
-    Console.WriteLine($"Found venv: {name}");
-}
-
-// Recreate if needed
-var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync(
-    "myenv",
-    recreateIfExists: true);
-```
-
-### Packages Not Found in Virtual Environment
-
-**Symptom:** Packages installed but not found when executing.
-
-**Possible Causes:**
-1. Package installed to wrong environment
-2. Virtual environment not activated properly
-
-**Solutions:**
-
-```csharp
-// Ensure you're using the venv runtime, not root runtime
-var rootRuntime = (BasePythonRootRuntime)runtime;
-var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync("myenv");
-
-// Install to venv
-await venv.InstallPackageAsync("numpy");
-
-// Execute in venv context
-var result = await venv.ExecuteCommandAsync("import numpy; print(numpy.__version__)");
-```
-
-## uv vs pip
-
-### uv Not Found / IsUvAvailable Is False
-
-**Symptom:** Package or venv operations fail; `runtime.IsUvAvailable` is `false`; logs mention uv not found.
-
-**Solutions:**
-
-```csharp
-// 1. Let the library install uv (default on GetOrCreateInstanceAsync)
-var runtime = await manager.GetOrCreateInstanceAsync("3.12.0", useUv: true);
-await runtime.EnsureUvInstalledAsync();
-
-// 2. Point to a custom uv binary
-var manager = new PythonManager("./instances", githubClient,
-    configuration: new ManagerConfiguration { UvPath = "/usr/local/bin/uv" });
-
-// 3. Opt out and use pip for this instance/operation
-await runtime.InstallPackageAsync("numpy", useUv: false);
-```
-
-### Packages Work on Root Runtime but Fail in uv-Created Venv
-
-**Symptom:** Root instance installs packages; venv created with `uv venv` cannot install or reports uv missing.
-
-**Cause:** `uv venv` does not copy `uv` into the venv. The library resolves uv from the **base interpreter** recorded in `pyvenv.cfg` (`home = ...`).
-
-**Solutions:**
-
-- Ensure the **root** runtime has uv installed (`EnsureUvInstalledAsync` / default `GetOrCreateInstanceAsync`).
-- Inspect `pyvenv.cfg` in the venv directory; `home` should point at the embedded base Python.
-- Verify `runtime.UvPath` on the **venv** runtime is non-null after `GetOrCreateVirtualEnvironmentAsync`.
-- For pip-only venvs: `GetOrCreateVirtualEnvironmentAsync("name", useUv: false)` and `InstallPackageAsync(..., useUv: false)`.
-
-### Wrong Tooling (Expected pip, Got uv or Vice Versa)
-
-Pass `useUv` consistently on manager, venv creation, and package APIs:
-
-```csharp
-var runtime = await manager.GetOrCreateInstanceAsync("3.12.0", useUv: false);
-var root = (BasePythonRootRuntime)runtime;
-var venv = await root.GetOrCreateVirtualEnvironmentAsync("env", useUv: false);
-await venv.InstallPackageAsync("pkg", useUv: false);
-```
+Environments are cached by `(installation, name)` — calling `GetEnvironmentAsync` again with the same version and name returns the existing one. To start clean, remove the installation (which removes all its environments) via `PythonEnvironment.RemoveAsync`, or delete `<root>/envs/<install-id>/<name>/` directly and retry.
 
 ## Package Installation Issues
 
-### Package Installation Fails
-
-**Symptom:** `PackageInstallationException` or non-zero exit code.
-
-**Solutions:**
+### `Kind = PackageOperationFailed`
 
 ```csharp
 try
 {
-    await runtime.InstallPackageAsync("package-name");
+    await env.Packages.InstallAsync("nonexistent-package-xyz");
 }
-catch (PackageInstallationException ex)
+catch (PythonProcessException ex)
 {
-    // Check installation output
-    Console.WriteLine($"Installation output: {ex.InstallationOutput}");
-    
-    // Check if package exists on PyPI
-    var packageInfo = await runtime.GetPackageMetadataAsync(ex.PackageSpecification);
-    if (packageInfo == null)
-    {
-        Console.WriteLine("Package not found on PyPI");
-    }
-    
-    // Try with upgrade flag
-    await runtime.InstallPackageAsync(ex.PackageSpecification, upgrade: true);
+    // pip/uv/conda output lands in the process result
+    Console.WriteLine(ex.Result.StandardError);
+}
+catch (PythonException ex) when (ex.Kind == PythonErrorKind.PackageOperationFailed)
+{
+    Console.WriteLine(ex.Message);
 }
 ```
 
-### Package Version Conflicts
+Package installers run as subprocesses and surface failures as `PythonProcessException` when the underlying tool exits nonzero — check `ex.Result.StandardError` first; it usually names the real cause (bad package name, network failure, unsatisfiable dependency).
 
-**Symptom:** Package installation fails due to dependency conflicts.
+### Requirements file not found
+
+`PackageRequest.RequirementsFile` is passed straight through to the installer; verify the path exists and is relative to the working directory you expect before calling `InstallAsync`.
+
+## Tool Provisioning (uv / conda / poetry)
+
+### `Kind = ToolMissing`
+
+`Tools.EnsureAsync` couldn't resolve or provision the tool. Resolution order:
+
+1. `PYEMBED_TOOL_<NAME>` environment variable (e.g. `PYEMBED_TOOL_UV`, `PYEMBED_TOOL_MICROMAMBA`) — the escape hatch to point at a system or custom binary.
+2. Next to the base interpreter.
+3. `<root>/tools/`.
+4. The satellite's provision callback (pip-install into the base interpreter for uv/poetry; static binary download for micromamba).
 
 **Solutions:**
 
 ```csharp
-// Use virtual environments to isolate dependencies
-var rootRuntime = (BasePythonRootRuntime)runtime;
-var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync("isolated-env");
-await venv.InstallPackageAsync("conflicting-package");
+// Point directly at an existing binary
+Environment.SetEnvironmentVariable("PYEMBED_TOOL_UV", "/opt/homebrew/bin/uv");
+
+// Or let auto-provisioning run — requires network unless already cached under <root>/tools/
 ```
 
-### Requirements File Installation Fails
+If provisioning fails in an offline/sandboxed environment, pre-populate `<root>/tools/` yourself or set the `PYEMBED_TOOL_*` override.
 
-**Symptom:** `RequirementsFileException` when installing from requirements.txt.
+### uv-created venvs and tool resolution
 
-**Solutions:**
-
-```csharp
-try
-{
-    await runtime.InstallRequirementsAsync("requirements.txt");
-}
-catch (RequirementsFileException ex)
-{
-    // Check file path
-    if (!File.Exists(ex.RequirementsFilePath))
-    {
-        Console.WriteLine($"Requirements file not found: {ex.RequirementsFilePath}");
-    }
-    
-    // Check installation output
-    Console.WriteLine($"Output: {ex.InstallationOutput}");
-    
-    // Install packages individually to identify problematic ones
-    var requirements = await File.ReadAllLinesAsync(ex.RequirementsFilePath);
-    foreach (var requirement in requirements)
-    {
-        try
-        {
-            await runtime.InstallPackageAsync(requirement.Trim());
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine($"Failed to install {requirement}: {e.Message}");
-        }
-    }
-}
-```
+uv doesn't copy `uv` itself into the venv it creates. `UvInstaller` resolves `uv` from the **base interpreter**, not the venv — this is transparent to callers, but if you're inspecting `pyvenv.cfg` manually, note that `home` points at the base install, not at a bundled uv.
 
 ## Python.NET Issues
 
-### Python.NET Initialization Fails
+### `Kind = ExecutionFailed` from `InProcessRunner`
 
-**Symptom:** `PythonNetInitializationException` when using `PythonNetManager`.
-
-**Possible Causes:**
-1. Python DLL not found
-2. Architecture mismatch (x64 vs x86)
-3. Missing dependencies
+**Possible causes:**
+1. `PythonNetHost.Initialize` was never called.
+2. libpython couldn't be found next to the base interpreter.
+3. A second, different environment was targeted after the engine already bound to the first (Python.NET is one engine per process).
 
 **Solutions:**
 
 ```csharp
-try
-{
-    var netManager = new PythonNetManager("./instances", githubClient);
-    var runtime = await netManager.GetOrCreateInstanceAsync("3.12.0");
-}
-catch (PythonNetInitializationException ex)
-{
-    Console.WriteLine($"Python path: {ex.PythonInstallPath}");
-    
-    // Verify Python installation
-    var manager = new PythonManager("./instances", githubClient);
-    var standardRuntime = await manager.GetOrCreateInstanceAsync("3.12.0");
-    var versionResult = await standardRuntime.ExecuteCommandAsync("--version");
-    
-    if (versionResult.ExitCode == 0)
-    {
-        // Python works, but Python.NET can't initialize
-        // May need to reinstall or check architecture
-    }
-}
+var env = await PythonEnvironment.GetEnvironmentAsync("3.13", "myapp");
+PythonNetHost.Initialize(env);   // must run before any RunAsync via InProcessRunner
+
+var result = await env.RunCodeAsync("print('ok')");
 ```
 
-### Python.NET Execution Errors
+Because the engine is process-global, you cannot switch to a different interpreter's `InProcessRunner` later in the same process — use the subprocess runner (the default) for that environment instead.
 
-**Symptom:** `PythonNetExecutionException` with Python traceback.
+### Traceback in `PythonProcessException`
 
-**Solutions:**
-
-```csharp
-try
-{
-    var result = await runtime.ExecuteCommandAsync("some-python-code");
-}
-catch (PythonNetExecutionException ex)
-{
-    // Check Python exception details
-    Console.WriteLine($"Python exception type: {ex.PythonExceptionType}");
-    Console.WriteLine($"Python traceback:\n{ex.PythonTraceback}");
-    
-    // Fix the Python code based on error
-}
-```
-
-### Memory Issues with Python.NET
-
-**Symptom:** Out of memory errors or crashes.
-
-**Solutions:**
-
-- Use subprocess mode (`PythonManager`) instead of Python.NET for memory-intensive operations
-- Dispose Python.NET runtimes when done
-- Limit concurrent Python.NET instances
-
-```csharp
-// Dispose properly
-if (runtime is IDisposable disposable)
-{
-    disposable.Dispose();
-}
-```
-
-## Performance Issues
-
-### Slow Package Installation
-
-**Symptom:** Package installation takes a very long time.
-
-**Solutions:**
-
-- Ensure you are using the default **`useUv: true`** (uv is much faster than pip for most workloads).
-- Use virtual environments to isolate dependencies.
-- Batch installs via `InstallRequirementsAsync`.
-
-```csharp
-var rootRuntime = (BasePythonRootRuntime)runtime;
-var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync("myenv");
-await venv.InstallRequirementsAsync("requirements.txt"); // useUv: true by default
-```
-
-### Slow Command Execution
-
-**Symptom:** Simple Python commands take too long.
-
-**Possible Causes:**
-1. Python startup overhead
-2. Large Python installation
-3. Network operations in Python code
-
-**Solutions:**
-
-- For simple operations, consider Python.NET mode (faster startup)
-- Cache frequently used runtimes
-- Use virtual environments to reduce package loading time
+`InProcessRunner` captures the Python traceback into `Result.StandardError` the same way the subprocess runner does — inspect `ex.Result.StandardError` for the failing Python code's stack trace.
 
 ## Platform-Specific Issues
 
-### Windows Issues
+### Windows
 
-**Executable Not Found:**
-- Ensure using `python.exe` (not `python3`)
-- Check PATH environment variables
+- Executable is `python.exe` at the install/env root, not `bin/python3`.
+- Antivirus / SmartScreen can slow first-run of a freshly extracted interpreter; this is a one-time cost.
 
-**Permissions:**
-- Run with appropriate permissions
-- Check antivirus isn't blocking Python execution
+### Linux
 
-### Linux Issues
+Missing system shared libraries under the extracted interpreter:
 
-**Missing System Libraries:**
 ```bash
-# Check for missing dependencies
-ldd python-instances/python-*/bin/python3
-
-# Install missing libraries (Ubuntu/Debian)
+ldd <root>/installs/*/python/bin/python3
 sudo apt-get install -f
 ```
 
-**Permissions:**
-```bash
-# Ensure executable permissions
-chmod +x python-instances/python-*/bin/python3
-```
+### macOS
 
-### macOS Issues
-
-**Code Signing:**
-- Python distributions may need to be signed
-- Check Gatekeeper settings
-
-**Architecture Mismatch:**
-- Ensure using correct architecture (Intel vs Apple Silicon)
-- Use Rosetta if needed for x64 on Apple Silicon
+- Gatekeeper may prompt on first execution of a freshly downloaded interpreter; this is expected for unsigned python-build-standalone binaries.
+- Apple Silicon vs Intel: `PlatformTriple` detection picks the matching build automatically; cross-architecture runs (e.g. under Rosetta) require explicitly targeting the other triple via a directory source.
 
 ## Debugging Tips
 
-### Enable Detailed Logging
+### Enable logging
 
 ```csharp
-using var loggerFactory = LoggerFactory.Create(builder =>
-{
-    builder
-        .AddConsole()
-        .SetMinimumLevel(LogLevel.Debug); // Enable debug logging
-});
+using var loggerFactory = LoggerFactory.Create(b => b.AddConsole().SetMinimumLevel(LogLevel.Debug));
 
-var manager = new PythonManager(
-    "./instances",
-    githubClient,
-    logger: loggerFactory.CreateLogger<PythonManager>(),
-    loggerFactory: loggerFactory);
+PythonEnvironment.Configure(o => o.Logger = loggerFactory.CreateLogger("Python"));
 ```
 
-### Verify Installation Manually
+### Inspect the on-disk layout directly
 
-```csharp
-// Check Python version
-var result = await runtime.ExecuteCommandAsync("--version");
-Console.WriteLine($"Python version: {result.StandardOutput}");
-
-// Check uv availability
-Console.WriteLine($"uv available: {runtime.IsUvAvailable}");
-Console.WriteLine($"uv path: {runtime.UvPath}");
-
-// List installed packages (uses uv)
-var packages = await runtime.ListInstalledPackagesAsync();
-Console.WriteLine("Installed packages:");
-foreach (var pkg in packages)
-{
-    Console.WriteLine($"  {pkg.Name}: {pkg.Version}");
-}
+```
+<root>/
+  installs/<id>/install.json     # presence = install is complete
+  envs/<id>/<name>/env.json      # presence = env is complete
+  locks/                         # stale lock files are safe to remove once confirmed unheld
+  tmp/                           # GC'd on next startup
 ```
 
-### Check Metadata
+A directory under `installs/` or `envs/` with no marker file is a leftover from an interrupted operation — it's ignored by the warm path and cleaned up automatically on the next `Python` startup in that root.
+
+### Verify an installation manually
 
 ```csharp
-// List all instances
-var instances = manager.ListInstances();
-foreach (var instance in instances)
-{
-    Console.WriteLine($"Version: {instance.PythonVersion}");
-    Console.WriteLine($"Build Date: {instance.BuildDate:yyyy-MM-dd}");
-    Console.WriteLine($"Directory: {instance.Directory}");
-    Console.WriteLine($"Installed: {instance.InstallationDate}");
-}
+var install = await PythonEnvironment.GetInstallationAsync("3.13");
+Console.WriteLine(install.PythonExecutable);
+Console.WriteLine(install.Directory);
+
+var result = await Subprocess.RunAsync(install.PythonExecutable, ["--version"]);
+Console.WriteLine(result.StandardOutput);
 ```
 
 ## Getting Help
 
-If you encounter issues not covered here:
-
-1. Check the [Error Handling](Error-Handling.md) documentation
-2. Review the [Examples](Examples.md) for usage patterns
-3. Check GitHub issues for similar problems
-4. Create a new issue with:
-   - PythonEmbedded.Net version
-   - .NET version
-   - Platform (Windows/Linux/macOS)
-   - Steps to reproduce
-   - Error messages and logs
+1. Check [Error-Handling.md](Error-Handling.md) for the exception model.
+2. Review [Examples.md](Examples.md) for working patterns.
+3. Check GitHub issues for similar problems.
+4. When filing a new issue, include: PythonEmbedded.Net version, .NET version, platform, the `PythonErrorKind` (if applicable), and steps to reproduce.
 
 ## See Also
 
-- [Error Handling](Error-Handling.md) - Exception reference
-- [Examples](Examples.md) - Usage examples
-- [API Reference](API-Reference.md) - Complete API documentation
-- [Architecture](Architecture.md) - Understanding the design
-
+- [Error Handling](Error-Handling.md)
+- [Examples](Examples.md)
+- [Quick Reference](Quick-Reference.md)
+- [Architecture](Architecture.md)

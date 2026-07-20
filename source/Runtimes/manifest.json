@@ -1,0 +1,151 @@
+{
+  "tag": "20260718",
+  "repository": "astral-sh/python-build-standalone",
+  "pythons": {
+    "3.11": {
+      "version": "3.11.15",
+      "assets": {
+        "aarch64-apple-darwin": {
+          "file": "cpython-3.11.15+20260718-aarch64-apple-darwin-install_only.tar.gz",
+          "sha256": "125587d03495bebdf30ec9e549a8469c97c0925d863ff401f24f157fd44d91d6"
+        },
+        "aarch64-pc-windows-msvc": {
+          "file": "cpython-3.11.15+20260718-aarch64-pc-windows-msvc-install_only.tar.gz",
+          "sha256": "4bcd4fd5b7809c91958311e37b8f708d93402fe6f2651abb17025810a85f908f"
+        },
+        "aarch64-unknown-linux-gnu": {
+          "file": "cpython-3.11.15+20260718-aarch64-unknown-linux-gnu-install_only.tar.gz",
+          "sha256": "fa8183308bb2ef9cd9342a0d7ceb02bd88420a867b4a5a4cdac04675d0b2fa7d"
+        },
+        "x86_64-apple-darwin": {
+          "file": "cpython-3.11.15+20260718-x86_64-apple-darwin-install_only.tar.gz",
+          "sha256": "870df60775609536b7c3b82ad5c10c5ffbf822e6819bb86d2218e43c172a5f32"
+        },
+        "x86_64-pc-windows-msvc": {
+          "file": "cpython-3.11.15+20260718-x86_64-pc-windows-msvc-install_only.tar.gz",
+          "sha256": "c3d782be3733f779d585633da374ff1bd92400d4d74c0c3922aee1526446096b"
+        },
+        "x86_64-unknown-linux-gnu": {
+          "file": "cpython-3.11.15+20260718-x86_64-unknown-linux-gnu-install_only.tar.gz",
+          "sha256": "c2082e977138e307e3da4ea2c65421d3cb6b80f4890890b28b96fc6b422d4f0d"
+        }
+      }
+    },
+    "3.12": {
+      "version": "3.12.13",
+      "assets": {
+        "aarch64-apple-darwin": {
+          "file": "cpython-3.12.13+20260718-aarch64-apple-darwin-install_only.tar.gz",
+          "sha256": "62aeee6161d57303a71a138b75fd5cc6fb8c89c4b1d9c7f0a052d89fa0b6652b"
+        },
+        "aarch64-pc-windows-msvc": {
+          "file": "cpython-3.12.13+20260718-aarch64-pc-windows-msvc-install_only.tar.gz",
+          "sha256": "9ac27ca430a5c09b350fee0956146e952e95dfa98de61a064859514cdde483a8"
+        },
+        "aarch64-unknown-linux-gnu": {
+          "file": "cpython-3.12.13+20260718-aarch64-unknown-linux-gnu-install_only.tar.gz",
+          "sha256": "53fb0a17442cd03bcfbc21df8d82e739b4901b87844934e36e54ab5122a55dfa"
+        },
+        "x86_64-apple-darwin": {
+          "file": "cpython-3.12.13+20260718-x86_64-apple-darwin-install_only.tar.gz",
+          "sha256": "10b47148de86f9d87ba6e96a3db606ced90a206a3454d7d6d8fa68536a05d81f"
+        },
+        "x86_64-pc-windows-msvc": {
+          "file": "cpython-3.12.13+20260718-x86_64-pc-windows-msvc-install_only.tar.gz",
+          "sha256": "56c9dd9681c4810cb8bfdec277ee2606d8ab17e678e5bc2bd138eb8098e330b6"
+        },
+        "x86_64-unknown-linux-gnu": {
+          "file": "cpython-3.12.13+20260718-x86_64-unknown-linux-gnu-install_only.tar.gz",
+          "sha256": "7eea0959fa425c8aff3ea0a1352ee7d01d794b51439ed8f5fcfa017dbc0ec661"
+        }
+      }
+    },
+    "3.13": {
+      "version": "3.13.14",
+      "assets": {
+        "aarch64-apple-darwin": {
+          "file": "cpython-3.13.14+20260718-aarch64-apple-darwin-install_only.tar.gz",
+          "sha256": "dca7c3bac21f023cf294705b27f4f3e9c70399c40790ebb81e8d0eff15b00770"
+        },
+        "aarch64-pc-windows-msvc": {
+          "file": "cpython-3.13.14+20260718-aarch64-pc-windows-msvc-install_only.tar.gz",
+          "sha256": "0362f7a072504d4ac5cb40438bc4fd8b36d2a702e1854d52667c452f6adf3175"
+        },
+        "aarch64-unknown-linux-gnu": {
+          "file": "cpython-3.13.14+20260718-aarch64-unknown-linux-gnu-install_only.tar.gz",
+          "sha256": "535b5091bf50a1832c04a69ead92c53a5bd27024c11426657ea5cc7b4122e24f"
+        },
+        "x86_64-apple-darwin": {
+          "file": "cpython-3.13.14+20260718-x86_64-apple-darwin-install_only.tar.gz",
+          "sha256": "2c7daabe0e94de636064d42f1afa46ea26a303bb23e14f4a64961d36eaecdb73"
+        },
+        "x86_64-pc-windows-msvc": {
+          "file": "cpython-3.13.14+20260718-x86_64-pc-windows-msvc-install_only.tar.gz",
+          "sha256": "aeacaec792528b8bda4ee7be9dc5721b0a830ba798de4c7d1cf727bc9c246ded"
+        },
+        "x86_64-unknown-linux-gnu": {
+          "file": "cpython-3.13.14+20260718-x86_64-unknown-linux-gnu-install_only.tar.gz",
+          "sha256": "5df2686713fcc114290a3b37db3f7253eb837721820ddba4575fdc131e70ec59"
+        }
+      }
+    },
+    "3.14": {
+      "version": "3.14.6",
+      "assets": {
+        "aarch64-apple-darwin": {
+          "file": "cpython-3.14.6+20260718-aarch64-apple-darwin-install_only.tar.gz",
+          "sha256": "5a234e405386bf486bab196018c01bc4577a4f0cc9fd5bc50f7a979fe4f5c59d"
+        },
+        "aarch64-pc-windows-msvc": {
+          "file": "cpython-3.14.6+20260718-aarch64-pc-windows-msvc-install_only.tar.gz",
+          "sha256": "9392d761a111c73c3e136dcdedd585f8aa5b5d972f40253b55de90460dec36fb"
+        },
+        "aarch64-unknown-linux-gnu": {
+          "file": "cpython-3.14.6+20260718-aarch64-unknown-linux-gnu-install_only.tar.gz",
+          "sha256": "97f9ddaa547f9420a5ab59e9eac7a5b04acd96acec2ef532f4a64283e3164aad"
+        },
+        "x86_64-apple-darwin": {
+          "file": "cpython-3.14.6+20260718-x86_64-apple-darwin-install_only.tar.gz",
+          "sha256": "b3bc968180342cfffde185f2c6d1de22d4e6c38b5f0f02487e32ccac2b8766ee"
+        },
+        "x86_64-pc-windows-msvc": {
+          "file": "cpython-3.14.6+20260718-x86_64-pc-windows-msvc-install_only.tar.gz",
+          "sha256": "97c01acd70108234ff042699996f3f4163c791f1d6e35de898475936b86ec3b2"
+        },
+        "x86_64-unknown-linux-gnu": {
+          "file": "cpython-3.14.6+20260718-x86_64-unknown-linux-gnu-install_only.tar.gz",
+          "sha256": "b442fb93903c6f3392b2430961d4725354ae0da7558c785a908d714264309b28"
+        }
+      }
+    },
+    "3.15": {
+      "version": "3.15.0b4",
+      "assets": {
+        "aarch64-apple-darwin": {
+          "file": "cpython-3.15.0b4+20260718-aarch64-apple-darwin-install_only.tar.gz",
+          "sha256": "77c4efe863708f4e1477a18c65d4d9d9a7673b771355353e9460b961fa9d5ce0"
+        },
+        "aarch64-pc-windows-msvc": {
+          "file": "cpython-3.15.0b4+20260718-aarch64-pc-windows-msvc-install_only.tar.gz",
+          "sha256": "135c59663ad53cd339d73963b0d370c2291dab336184f9616531a30a46399020"
+        },
+        "aarch64-unknown-linux-gnu": {
+          "file": "cpython-3.15.0b4+20260718-aarch64-unknown-linux-gnu-install_only.tar.gz",
+          "sha256": "456120b7d051e659423d5734d14bcc5208b96c2dd8d1475d23be860f741d4b4b"
+        },
+        "x86_64-apple-darwin": {
+          "file": "cpython-3.15.0b4+20260718-x86_64-apple-darwin-install_only.tar.gz",
+          "sha256": "cb971bb50b9e4efa8b8123e998c873381534ce126caa4337f08a4cebfb384d95"
+        },
+        "x86_64-pc-windows-msvc": {
+          "file": "cpython-3.15.0b4+20260718-x86_64-pc-windows-msvc-install_only.tar.gz",
+          "sha256": "116066e84f7c6581e3393649f70aa4a19396689cbe36c6f6341e78ea9cd4dbda"
+        },
+        "x86_64-unknown-linux-gnu": {
+          "file": "cpython-3.15.0b4+20260718-x86_64-unknown-linux-gnu-install_only.tar.gz",
+          "sha256": "910573f09b2571ed99e7a54e3096c4c5c5f97612f5ce7373b4b36dc996e68bd4"
+        }
+      }
+    }
+  }
+}

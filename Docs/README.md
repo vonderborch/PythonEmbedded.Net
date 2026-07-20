@@ -1,79 +1,13 @@
 # PythonEmbedded.Net Documentation
 
-Welcome to the PythonEmbedded.Net documentation. This directory contains comprehensive documentation for using and contributing to the library.
+Documentation for PythonEmbedded.Net 2.x — the clean-slate rebuild with a static `PythonEnvironment` facade, three interfaces, and satellite packages.
 
-**Current release:** 1.5.x · targets **.NET 9** and **.NET 10**
-
-## Documentation Index
-
-### Getting Started
-
-- **[Getting Started](Getting-Started.md)** - Quick start guide for new users
-- **[Quick Reference](Quick-Reference.md)** - Quick reference for common operations and code snippets
-
-### User Guides
-
-- **[API Reference](API-Reference.md)** - Complete API documentation with detailed method signatures and examples
-- **[Examples](Examples.md)** - Comprehensive examples covering various use cases (including `useUv` / pip fallback)
-- **[Error Handling](Error-Handling.md)** - Exception hierarchy and error handling best practices
-- **[Troubleshooting](Troubleshooting.md)** - Common issues and solutions (including uv vs pip)
-
-### Technical Documentation
-
-- **[Architecture](Architecture.md)** - Design overview, class hierarchy, and architectural decisions
-
-### Contributing
-
-- **[Contributing](Contributing.md)** - Guidelines for contributing to the project
-
-## Quick Navigation
-
-### I want to...
-
-**Get started quickly:**
-→ Start with [Getting Started](Getting-Started.md) or [Quick Reference](Quick-Reference.md)
-
-**Understand the API:**
-→ Read [API Reference](API-Reference.md)
-
-**See usage examples:**
-→ Check [Examples](Examples.md)
-
-**Use pip instead of uv:**
-→ See [Quick Reference](Quick-Reference.md#package-manager-uv-vs-pip) and [Examples](Examples.md#package-manager-uv-vs-pip)
-
-**Handle errors:**
-→ See [Error Handling](Error-Handling.md)
-
-**Solve a problem:**
-→ Check [Troubleshooting](Troubleshooting.md)
-
-**Understand the design:**
-→ Read [Architecture](Architecture.md)
-
-**Contribute:**
-→ Read [Contributing](Contributing.md)
-
-## Documentation Structure
-
-```
-Docs/
-├── README.md              # This file
-├── Getting-Started.md     # Getting started guide
-├── Quick-Reference.md     # Quick reference guide
-├── API-Reference.md       # Complete API documentation
-├── Examples.md            # Usage examples
-├── Error-Handling.md      # Exception reference
-├── Troubleshooting.md     # Common issues and solutions
-├── Architecture.md        # Design and architecture
-└── Contributing.md        # Contribution guidelines
-```
-
-## External Links
-
-- [Main README](../README.md) - Project overview and quick start
-- [GitHub Repository](https://github.com/vonderborch/PythonEmbedded.Net) - Source code and issues
-
-## Feedback
-
-If you find documentation issues or have suggestions for improvements, please open an issue on GitHub.
+| Document | What it covers |
+| --- | --- |
+| [Getting-Started.md](Getting-Started.md) | Install, first environment, running code, configuration. |
+| [Quick-Reference.md](Quick-Reference.md) | The whole public API on one page. |
+| [Examples.md](Examples.md) | Recipes: servers, offline apps, uv/conda/poetry, in-process interop. |
+| [Architecture.md](Architecture.md) | How it works: the three interfaces, on-disk layout, concurrency, satellites. |
+| [Error-Handling.md](Error-Handling.md) | The two exception types and how failures surface. |
+| [Troubleshooting.md](Troubleshooting.md) | Common issues and fixes. |
+| [Contributing.md](Contributing.md) | Building, testing, fixtures, repo layout. |

@@ -41,6 +41,23 @@
       <BuildDependency Project=".build\pre_solution_build.csproj" />
     </Project>
   </Folder>
+  <Folder Name="/source/PackageManagers/">
+    <Project Path="source\PackageManagers\PythonEmbedded.Net.PackageManagers.Conda\PythonEmbedded.Net.PackageManagers.Conda.csproj" />
+    <Project Path="source\PackageManagers\PythonEmbedded.Net.PackageManagers.Poetry\PythonEmbedded.Net.PackageManagers.Poetry.csproj" />
+    <Project Path="source\PackageManagers\PythonEmbedded.Net.PackageManagers.Uv\PythonEmbedded.Net.PackageManagers.Uv.csproj" />
+  </Folder>
+  <Folder Name="/source/Runners/">
+    <Project Path="source\Runners\PythonEmbedded.Net.Runners.PythonNet\PythonEmbedded.Net.Runners.PythonNet.csproj" />
+  </Folder>
+  <Folder Name="/source/Runtimes/">
+    <Project Path="source\Runtimes\PythonEmbedded.Net.Runtime.Python311\PythonEmbedded.Net.Runtime.Python311.csproj" />
+    <Project Path="source\Runtimes\PythonEmbedded.Net.Runtime.Python312\PythonEmbedded.Net.Runtime.Python312.csproj" />
+    <Project Path="source\Runtimes\PythonEmbedded.Net.Runtime.Python313\PythonEmbedded.Net.Runtime.Python313.csproj" />
+    <Project Path="source\Runtimes\PythonEmbedded.Net.Runtime.Python314\PythonEmbedded.Net.Runtime.Python314.csproj" />
+    <Project Path="source\Runtimes\PythonEmbedded.Net.Runtime.Python315\PythonEmbedded.Net.Runtime.Python315.csproj" />
+    <File Path="source\Runtimes\manifest.json" />
+    <File Path="source\Runtimes\tools\update-manifest.py" />
+  </Folder>
   <Folder Name="/test/" />
   <Folder Name="/test/automated/">
     <Project Path="test/automated/PythonEmbedded.Net.IntegrationTest/PythonEmbedded.Net.IntegrationTest.csproj" />

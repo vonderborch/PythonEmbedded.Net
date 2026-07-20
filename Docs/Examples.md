@@ -1,743 +1,310 @@
 # Examples
 
-This document provides comprehensive examples for using PythonEmbedded.Net **1.4.x** (**.NET 9** / **.NET 10**).
+Recipes for PythonEmbedded.Net 2.x. See [Quick-Reference.md](Quick-Reference.md) for the full API and [Getting-Started.md](Getting-Started.md) for the basics.
 
 ## Table of Contents
 
 - [Basic Usage](#basic-usage)
-- [Virtual Environments](#virtual-environments)
-- [Package Manager (uv vs pip)](#package-manager-uv-vs-pip)
+- [Named Environments](#named-environments)
 - [Package Management](#package-management)
-- [Script Execution](#script-execution)
-- [Input/Output Handling](#inputoutput-handling)
+- [Script, Code, and Module Execution](#script-code-and-module-execution)
+- [Long-Lived Processes](#long-lived-processes)
+- [Configuration](#configuration)
+- [Offline / Bundled Runtimes](#offline--bundled-runtimes)
+- [uv](#uv)
+- [Conda](#conda)
+- [Poetry](#poetry)
+- [In-Process Execution (Python.NET)](#in-process-execution-pythonnet)
 - [Error Handling](#error-handling)
 - [Dependency Injection](#dependency-injection)
 - [Multiple Python Versions](#multiple-python-versions)
-- [Resource Management](#resource-management)
 
 ## Basic Usage
 
-### Simple Command Execution
-
 ```csharp
 using PythonEmbedded.Net;
-using Octokit;
 
-var manager = new PythonManager(
-    "./python-instances",
-    new GitHubClient(new ProductHeaderValue("MyApp")));
-
-var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
-var result = await runtime.ExecuteCommandAsync("print('Hello, World!')");
-
-Console.WriteLine($"Exit Code: {result.ExitCode}");
-Console.WriteLine($"Output: {result.StandardOutput}");
-```
-
-### Getting Python Version
-
-```csharp
-var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
-var result = await runtime.ExecuteCommandAsync("import sys; print(sys.version)");
+var env = await PythonEnvironment.GetEnvironmentAsync("3.13", "myapp");
+await env.Packages.InstallAsync("requests");
+var result = await env.RunAsync("script.py");
 Console.WriteLine(result.StandardOutput);
 ```
 
-### Listing Installed Packages
+Synchronous callers use the twin methods instead:
 
 ```csharp
-var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
-
-// List installed packages (uses uv pip list)
-var packages = await runtime.ListInstalledPackagesAsync();
-foreach (var pkg in packages)
-{
-    Console.WriteLine($"{pkg.Name}: {pkg.Version}");
-}
-
-// Check if a package is installed
-var isInstalled = await runtime.IsPackageInstalledAsync("numpy");
-
-// Get specific package version
-var version = await runtime.GetPackageVersionAsync("numpy");
+var env = PythonEnvironment.GetEnvironment("3.13", "myapp");
+env.Packages.Install("requests");
+var result = env.Run("script.py");
 ```
 
-## Virtual Environments
-
-Virtual environments are created using [uv](https://github.com/astral-sh/uv), which is significantly faster than the traditional `python -m venv` approach. `uv` is automatically installed when runtime instances are created.
-
-### Creating and Using Virtual Environments
+### Running Inline Code
 
 ```csharp
-var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
-var rootRuntime = (BasePythonRootRuntime)runtime;
-
-// Create a virtual environment (uses uv for fast creation)
-var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync("myproject");
-
-// Install packages in the virtual environment
-await venv.InstallPackageAsync("numpy");
-await venv.InstallPackageAsync("pandas");
-
-// Execute code in the virtual environment
-var result = await venv.ExecuteCommandAsync(
-    "import numpy as np; import pandas as pd; print(f'NumPy: {np.__version__}, Pandas: {pd.__version__}')");
+var result = await env.RunCodeAsync("import sys; print(sys.version)");
 Console.WriteLine(result.StandardOutput);
 ```
 
-### Creating Virtual Environments at External Paths
-
-You can create virtual environments at custom locations outside the default instance directory:
+### Running a Module
 
 ```csharp
-var rootRuntime = (BasePythonRootRuntime)runtime;
-
-// Create venv at a project-specific location
-var projectVenv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync(
-    "projectenv",
-    externalPath: "/path/to/myproject/.venv");
-
-// The venv is tracked by name but stored at the external path
-var resolvedPath = rootRuntime.ResolveVirtualEnvironmentPath("projectenv");
-Console.WriteLine($"Venv located at: {resolvedPath}"); // /path/to/myproject/.venv
-
-// Get venv info
-var info = rootRuntime.GetVirtualEnvironmentInfo("projectenv");
-Console.WriteLine($"Is external: {info["IsExternal"]}"); // True
-Console.WriteLine($"External path: {info["ExternalPath"]}"); // /path/to/myproject/.venv
+await env.RunModuleAsync("http.server", ["8080"]);
 ```
 
-### Listing Virtual Environments
+## Named Environments
+
+Every installation can have multiple named virtual environments. The name is always required — there is no default — so the same version can back several independent environments.
 
 ```csharp
-var rootRuntime = (BasePythonRootRuntime)runtime;
-var venvNames = rootRuntime.ListVirtualEnvironments();
+var install = await PythonEnvironment.GetInstallationAsync("3.13");
 
-foreach (var name in venvNames)
-{
-    // Check if venv is external
-    var metadata = rootRuntime.GetVirtualEnvironmentMetadata(name);
-    var location = metadata?.IsExternal == true ? $"(external: {metadata.ExternalPath})" : "(default)";
-    Console.WriteLine($"Virtual environment: {name} {location}");
-}
+var webEnv = await install.GetEnvironmentAsync("web");
+var dataEnv = await install.GetEnvironmentAsync("data");
+
+await webEnv.Packages.InstallAsync("flask");
+await dataEnv.Packages.InstallAsync("pandas");
 ```
 
-### Checking if Virtual Environment Exists
+Or go straight from the facade — `PythonEnvironment.GetEnvironmentAsync` resolves the installation implicitly:
 
 ```csharp
-var rootRuntime = (BasePythonRootRuntime)runtime;
-
-// Check if a venv exists (works for both standard and external venvs)
-if (rootRuntime.VirtualEnvironmentExists("myproject"))
-{
-    Console.WriteLine("Virtual environment exists");
-}
+var webEnv = await PythonEnvironment.GetEnvironmentAsync("3.13", "web");
 ```
 
-### Recreating Virtual Environments
-
-```csharp
-// Recreate an existing virtual environment
-var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync(
-    "myproject", 
-    recreateIfExists: true);
-```
-
-### Deleting Virtual Environments
-
-```csharp
-// Delete a virtual environment (removes files)
-var deleted = await rootRuntime.DeleteVirtualEnvironmentAsync("myproject");
-
-// Delete external venv but keep the files on disk
-var deletedMetadataOnly = await rootRuntime.DeleteVirtualEnvironmentAsync(
-    "projectenv",
-    deleteExternalFiles: false);
-
-if (deleted)
-{
-    Console.WriteLine("Virtual environment deleted successfully");
-}
-```
-
-### Cloning Virtual Environments
-
-```csharp
-// Clone an existing virtual environment
-var clonedVenv = await rootRuntime.CloneVirtualEnvironmentAsync("source_venv", "cloned_venv");
-
-// The cloned environment will have all the same packages
-Assert.That(await clonedVenv.IsPackageInstalledAsync("numpy"), Is.True);
-```
-
-### Exporting and Importing Virtual Environments
-
-```csharp
-// Export a virtual environment to an archive
-var exportPath = await rootRuntime.ExportVirtualEnvironmentAsync("myproject", "./backups/myproject_venv.zip");
-
-// Later, import it back
-var importedVenv = await rootRuntime.ImportVirtualEnvironmentAsync("restored_project", "./backups/myproject_venv.zip");
-```
-
-## Package Manager (uv vs pip)
-
-By default, PythonEmbedded.Net uses [uv](https://github.com/astral-sh/uv) for virtual environments and package operations. Pass **`useUv: false`** to use the standard library `venv` module and `python -m pip` instead.
-
-### Default (uv) Instance and Venv
-
-```csharp
-// Installs/detects uv on the root runtime (default)
-var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
-Console.WriteLine($"uv: {runtime.UvPath}");
-
-var root = (BasePythonRootRuntime)runtime;
-var venv = await root.GetOrCreateVirtualEnvironmentAsync("uv-project");
-await venv.InstallPackageAsync("requests");
-```
-
-`uv venv` does not place `uv` inside the venv. The venv runtime resolves uv from the base interpreter via **`pyvenv.cfg`** (`home = ...`) and runs `uv pip ... --python <venv-python>`.
-
-### Pip / venv Fallback
-
-```csharp
-var runtime = await manager.GetOrCreateInstanceAsync("3.12.0", useUv: false);
-var root = (BasePythonRootRuntime)runtime;
-
-var venv = await root.GetOrCreateVirtualEnvironmentAsync("pip-project", useUv: false);
-await venv.InstallPackageAsync("six==1.16.0", useUv: false);
-
-var packages = await venv.ListInstalledPackagesAsync(useUv: false);
-```
-
-### Custom uv Path (Manager Configuration)
-
-```csharp
-var manager = new PythonManager(
-    "./python-instances",
-    githubClient,
-    configuration: new ManagerConfiguration
-    {
-        UvPath = "/opt/homebrew/bin/uv"
-    });
-```
+Calling `GetEnvironmentAsync` again with the same version and name returns the existing environment; nothing is recreated.
 
 ## Package Management
 
-By default, package operations use [uv](https://github.com/astral-sh/uv) (`uv pip`), which is significantly faster than pip alone. `uv` is installed/detected when `useUv: true` (the default) on instance creation. Use `useUv: false` for `python -m pip`.
-
-### Installing Single Packages
-
 ```csharp
-var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
+await env.Packages.InstallAsync("requests");
+await env.Packages.InstallAsync("requests==2.31.0");
+await env.Packages.InstallAsync("numpy>=1.20.0");
 
-// Install latest version (uv pip install — default)
-await runtime.InstallPackageAsync("requests");
+await env.Packages.InstallAsync(new PackageRequest
+{
+    Packages = ["numpy", "pandas"],
+    IndexUrl = "https://my-pypi-mirror.com/simple/",
+});
 
-// Same package via pip
-await runtime.InstallPackageAsync("requests", useUv: false);
+await env.Packages.InstallAsync(new PackageRequest
+{
+    RequirementsFile = "requirements.txt",
+});
 
-// Install specific version
-await runtime.InstallPackageAsync("requests==2.31.0");
+await env.Packages.UninstallAsync("requests");
 
-// Install with version constraint
-await runtime.InstallPackageAsync("numpy>=1.20.0");
-
-// Upgrade package
-await runtime.InstallPackageAsync("requests", upgrade: true);
-
-// Install with custom index URL
-await runtime.InstallPackageAsync("mypackage", indexUrl: "https://my-pypi-mirror.com/simple/");
+var installed = await env.Packages.ListAsync();
+foreach (var pkg in installed)
+{
+    Console.WriteLine($"{pkg.Name}: {pkg.Version}");
+}
 ```
 
-### Installing from requirements.txt
+## Script, Code, and Module Execution
 
 ```csharp
-// Create a requirements.txt file
-var requirementsPath = "requirements.txt";
-await File.WriteAllTextAsync(requirementsPath, @"
-numpy>=1.20.0
-pandas==2.0.0
-requests
-");
+// A script file, with args and options
+var result = await env.RunAsync("job.py", ["--flag", "value"], new RunOptions
+{
+    WorkingDirectory = "/data",
+    Environment = new Dictionary<string, string> { ["MODE"] = "prod" },
+    Timeout = TimeSpan.FromMinutes(5),
+});
 
-// Install packages
-var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
-await runtime.InstallRequirementsAsync(requirementsPath);
+// Inline code
+await env.RunCodeAsync("print('hello')");
 
-// Or with upgrade
-await runtime.InstallRequirementsAsync(requirementsPath, upgrade: true);
+// python -m
+await env.RunModuleAsync("http.server", ["8080"]);
 ```
 
-### Installing from pyproject.toml
+A nonzero exit throws `PythonProcessException` by default. Pass `ThrowOnError = false` to get a `PythonResult` back instead:
 
 ```csharp
-var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
-
-// Install in normal mode
-await runtime.InstallPyProjectAsync("./my-python-project");
-
-// Install in editable mode
-await runtime.InstallPyProjectAsync("./my-python-project", editable: true);
+var result = await env.RunAsync("might-fail.py", options: new RunOptions { ThrowOnError = false });
+if (!result.Success)
+{
+    Console.WriteLine($"Exit {result.ExitCode}: {result.StandardError}");
+}
 ```
 
-### Installing to Virtual Environment
+### Providing stdin
 
 ```csharp
-var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
-var rootRuntime = (BasePythonRootRuntime)runtime;
-
-var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync("myproject");
-
-// Install packages in the virtual environment
-await venv.InstallPackageAsync("flask");
-await venv.InstallPackageAsync("sqlalchemy");
+var result = await env.RunCodeAsync(
+    "import sys; print(sys.stdin.read().upper())",
+    new RunOptions { Stdin = "hello from .net" });
 ```
 
-## Script Execution
+## Long-Lived Processes
 
-### Executing a Python Script
+`Start` returns a live `PythonProcess` for servers, workers, or anything that needs streamed I/O.
 
 ```csharp
-var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
+await using var server = env.Start("server.py", ["--port", "8080"]);
 
-// Execute a script without arguments
-var result = await runtime.ExecuteScriptAsync("script.py");
+server.OutputLine += line => Console.WriteLine($"[py] {line}");
+server.ErrorLine += line => Console.WriteLine($"[py:err] {line}");
 
-// Execute a script with arguments
-var result2 = await runtime.ExecuteScriptAsync(
-    "script.py", 
-    arguments: new[] { "arg1", "arg2", "arg3" });
+await server.StandardInput.WriteLineAsync("ping");
+
+// Disposing kills the process if it's still running.
 ```
 
-### Creating and Executing a Script
+To wait for a natural exit instead:
 
 ```csharp
-// Create a simple script
-var scriptContent = @"
-import sys
-print(f'Arguments: {sys.argv[1:]}')
-print('Hello from Python script!')
-";
-await File.WriteAllTextAsync("hello.py", scriptContent);
-
-// Execute it
-var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
-var result = await runtime.ExecuteScriptAsync("hello.py", arguments: new[] { "world", "test" });
-Console.WriteLine(result.StandardOutput);
+var exitCode = await server.WaitForExitAsync();
 ```
 
-## Input/Output Handling
-
-### Providing Input via stdin
+## Configuration
 
 ```csharp
-var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
-
-var inputLines = new[] { "line1", "line2", "line3" };
-int lineIndex = 0;
-
-var result = await runtime.ExecuteCommandAsync(
-    "import sys; [print(f'Received: {line}') for line in sys.stdin]",
-    stdinHandler: () => lineIndex < inputLines.Length ? inputLines[lineIndex++] : null);
-
-Console.WriteLine(result.StandardOutput);
+PythonEnvironment.Configure(o =>
+{
+    o.RootDirectory = @"C:\MyApp\python";           // default: app-local data folder
+    o.Offline = true;                                // never touch the network
+    o.GitHubToken = "...";                            // defaults to GITHUB_TOKEN env var
+    o.Logger = loggerFactory.CreateLogger("Python");
+    o.AddDirectorySource(@"D:\python-archives");      // your own archive directory, highest priority
+    o.LockTimeout = TimeSpan.FromMinutes(2);
+});
 ```
 
-### Processing Output Line by Line
+`Configure` must run before the first `PythonEnvironment.Get*` call; calling it afterward throws.
 
-```csharp
-var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
+## Offline / Bundled Runtimes
 
-var outputLines = new List<string>();
+Reference a runtime package and `GetEnvironmentAsync` needs no network at all, even with `o.Offline = true`:
 
-var result = await runtime.ExecuteCommandAsync(
-    "for i in range(5): print(f'Line {i}')",
-    stdoutHandler: line => 
-    {
-        outputLines.Add(line);
-        Console.WriteLine($"[STDOUT] {line}");
-    });
-
-Console.WriteLine($"Captured {outputLines.Count} lines");
+```bash
+dotnet add package PythonEmbedded.Net.Runtime.Python313
 ```
 
-### Processing Errors
-
 ```csharp
-var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
-
-var errors = new List<string>();
-
-var result = await runtime.ExecuteCommandAsync(
-    "import sys; sys.stderr.write('Error message 1\\n'); sys.stderr.write('Error message 2\\n')",
-    stderrHandler: line =>
-    {
-        errors.Add(line);
-        Console.Error.WriteLine($"[STDERR] {line}");
-    });
-
-Console.WriteLine($"Captured {errors.Count} error lines");
+PythonEnvironment.Configure(o => o.Offline = true);
+var env = await PythonEnvironment.GetEnvironmentAsync("3.13", "myapp");   // resolves entirely from the bundled archive
 ```
 
-### Complete I/O Example
+## uv
 
 ```csharp
-var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
+PythonEnvironment.Configure(o => o.Installer = new UvInstaller { Seed = true });
 
-var inputData = new[] { "5", "10", "15" };
-int inputIndex = 0;
-var outputs = new List<string>();
-var errors = new List<string>();
+var env = await PythonEnvironment.GetEnvironmentAsync("3.13", "myapp");
+await env.Packages.InstallAsync("requests");   // now backed by uv, ~10x faster than pip
+```
 
-var result = await runtime.ExecuteCommandAsync(
-    @"
-import sys
-for line in sys.stdin:
-    num = int(line.strip())
-    result = num * 2
-    print(f'{num} * 2 = {result}')
-    sys.stderr.write(f'Processed: {num}\n')
-",
-    stdinHandler: () => inputIndex < inputData.Length ? inputData[inputIndex++] : null,
-    stdoutHandler: line => outputs.Add(line),
-    stderrHandler: line => errors.Add(line));
+uv is provisioned automatically into the base interpreter on first use — no separate install step. Pin a specific uv release instead of always grabbing latest with `new UvInstaller { Version = "0.5.11" }`; pinned versions are provisioned into their own private location so they can coexist with other requested versions.
 
-Console.WriteLine($"Outputs: {string.Join(", ", outputs)}");
-Console.WriteLine($"Errors: {string.Join(", ", errors)}");
+## Conda
+
+```csharp
+PythonEnvironment.Configure(o => o.Installer = new CondaInstaller { Channels = ["conda-forge"] });
+
+var env = await PythonEnvironment.GetEnvironmentAsync("3.13", "geo");
+await env.Packages.InstallAsync("gdal");   // real conda env via a self-provisioned micromamba
+```
+
+Conda's underlying micromamba binary is pinned with `MicromambaVersion` (e.g. `"2.1.1-0"`); it defaults to `"latest"`.
+
+### From an `environment.yml`
+
+```csharp
+await env.Packages.InstallAsync(new PackageRequest { ProjectDirectory = "./my-project" });
+```
+
+## Poetry
+
+```csharp
+PythonEnvironment.Configure(o => o.Installer = new PoetryInstaller { WithDevDependencies = false });
+
+var env = await PythonEnvironment.GetEnvironmentAsync("3.13", "myapp");
+await env.Packages.InstallAsync(new PackageRequest { ProjectDirectory = "./my-poetry-project" });
+```
+
+Ad-hoc single-package installs on a poetry-managed environment fall back to plain pip. Pin a specific Poetry release with `new PoetryInstaller { Version = "1.8.3" }`.
+
+## In-Process Execution (Python.NET)
+
+```csharp
+using PythonEmbedded.Net.Runners.PythonNet;
+
+PythonEnvironment.Configure(o => o.Runner = new InProcessRunner());
+
+var env = await PythonEnvironment.GetEnvironmentAsync("3.13", "myapp");
+PythonNetHost.Initialize(env);   // one engine per process; call once
+
+var result = await env.RunCodeAsync("print(2 + 2)");   // runs in-process, no subprocess overhead
+
+PythonNetHost.RunInScope(scope =>
+{
+    // direct interop with the Python.NET scope
+});
 ```
 
 ## Error Handling
 
-### Handling Package Installation Errors
-
 ```csharp
 try
 {
-    var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
-    await runtime.InstallPackageAsync("nonexistent-package-xyz");
+    await env.RunAsync("flaky.py");
 }
-catch (PackageInstallationException ex)
+catch (PythonProcessException ex)
 {
-    Console.WriteLine($"Package installation failed: {ex.Message}");
-    Console.WriteLine($"Package: {ex.PackageSpecification}");
-    if (!string.IsNullOrEmpty(ex.InstallationOutput))
-    {
-        Console.WriteLine($"Output: {ex.InstallationOutput}");
-    }
+    Console.WriteLine($"Exit {ex.Result.ExitCode}: {ex.Result.StandardError}");
+}
+catch (PythonException ex)
+{
+    Console.WriteLine($"{ex.Kind}: {ex.Message}");
 }
 ```
 
-### Handling Execution Errors
-
-```csharp
-try
-{
-    var runtime = await manager.GetOrCreateInstanceAsync("3.12.0");
-    var result = await runtime.ExecuteCommandAsync("raise ValueError('Test error')");
-    
-    if (result.ExitCode != 0)
-    {
-        Console.WriteLine($"Non-zero exit code: {result.ExitCode}");
-        Console.WriteLine($"Error output: {result.StandardError}");
-    }
-}
-catch (PythonExecutionException ex)
-{
-    Console.WriteLine($"Execution failed: {ex.Message}");
-    Console.WriteLine($"Exit Code: {ex.ExitCode}");
-    Console.WriteLine($"Error: {ex.StandardError}");
-}
-```
-
-### Handling Instance Not Found
-
-```csharp
-try
-{
-    var runtime = await manager.GetOrCreateInstanceAsync("99.99.99");
-}
-catch (InstanceNotFoundException ex)
-{
-    Console.WriteLine($"Python version not found: {ex.PythonVersion}");
-    // BuildDate is now DateTime? instead of string?
-    Console.WriteLine($"Build date: {ex.BuildDate?.ToString("yyyy-MM-dd") ?? "latest"}");
-}
-```
-
-### Checking for Virtual Environment
-
-```csharp
-var rootRuntime = (BasePythonRootRuntime)runtime;
-
-try
-{
-    var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync("myenv");
-}
-catch (PythonInstallationException ex)
-{
-    Console.WriteLine($"Virtual environment creation failed: {ex.Message}");
-}
-```
+See [Error-Handling.md](Error-Handling.md) for the full exception model.
 
 ## Dependency Injection
 
-### ASP.NET Core Integration
+`PythonEnvironment` is a static facade, so there is nothing to register — call `PythonEnvironment.Configure` once at startup (e.g. in `Program.cs`) and use `PythonEnvironment.GetEnvironmentAsync` from anywhere:
 
 ```csharp
-// In Startup.cs or Program.cs
-services.AddMemoryCache(); // Optional: enables caching of GitHub API responses
-
-services.AddSingleton<GitHubClient>(sp =>
-{
-    var token = configuration["GitHub:Token"];
-    return new GitHubClient(new ProductHeaderValue("MyApp"))
-    {
-        Credentials = token != null ? new Credentials(token) : null
-    };
-});
-
-services.AddSingleton<PythonManager>(sp =>
-{
-    var githubClient = sp.GetRequiredService<GitHubClient>();
-    var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
-    var cache = sp.GetService<IMemoryCache>(); // Optional: improves performance
-    var logger = loggerFactory.CreateLogger<PythonManager>();
-    
-    return new PythonManager(
-        configuration["Python:InstancesDirectory"],
-        githubClient,
-        logger,
-        loggerFactory,
-        cache);
-});
-
-// In a service
 public class MyService
 {
-    private readonly PythonManager _pythonManager;
-    
-    public MyService(PythonManager pythonManager)
+    public async Task<string> RunAsync(string code)
     {
-        _pythonManager = pythonManager;
-    }
-    
-    public async Task<string> ExecutePythonAsync(string code)
-    {
-        var runtime = await _pythonManager.GetOrCreateInstanceAsync("3.12.0");
-        var result = await runtime.ExecuteCommandAsync(code);
+        var env = await PythonEnvironment.GetEnvironmentAsync("3.13", "myapp");
+        var result = await env.RunCodeAsync(code);
         return result.StandardOutput;
     }
 }
 ```
 
+If you prefer an injectable seam for testing, wrap the calls you need behind your own small interface and have `MyService` depend on that instead.
+
 ## Multiple Python Versions
 
-### Managing Multiple Versions
-
 ```csharp
-var manager = new PythonManager("./python-instances", githubClient);
+var py312 = await PythonEnvironment.GetEnvironmentAsync("3.12", "myapp");
+var py313 = await PythonEnvironment.GetEnvironmentAsync("3.13", "myapp");
 
-// Get different Python versions
-var python312 = await manager.GetOrCreateInstanceAsync("3.12.0");
-var python311 = await manager.GetOrCreateInstanceAsync("3.11.0");
-var python310 = await manager.GetOrCreateInstanceAsync("3.10.0");
-
-// Use different versions for different tasks
-var result312 = await python312.ExecuteCommandAsync("print('Python 3.12')");
-var result311 = await python311.ExecuteCommandAsync("print('Python 3.11')");
+var r312 = await py312.RunCodeAsync("print('3.12')");
+var r313 = await py313.RunCodeAsync("print('3.13')");
 ```
 
-### Version Matching Behavior
-
-PythonEmbedded.Net supports two types of version matching:
-
-**Exact Version Matching:**
-When you specify a full version (Major.Minor.Patch), it matches exactly:
+Version strings accept `"latest"`, `"3"`, `"3.13"`, `"3.13.2"`, or a pre-release like `"3.15.0b3"`. Partial versions resolve to the newest matching build.
 
 ```csharp
-// Matches exactly Python 3.12.5
-var runtime = await manager.GetOrCreateInstanceAsync("3.12.5");
-```
-
-**Partial Version Matching:**
-When you specify only Major.Minor, it finds the latest patch version:
-
-```csharp
-// Finds the latest patch version (e.g., 3.12.19)
-var runtime = await manager.GetOrCreateInstanceAsync("3.12");
-
-// This works for both local instances and when downloading from GitHub
-// If you have 3.12.5, 3.12.10, and 3.12.19 installed locally, it will use 3.12.19
-// If downloading, it will get the latest patch version available
-```
-
-### Using Build Dates
-
-Build dates are now `DateTime?` objects (previously strings):
-
-```csharp
-// Get a specific build date
-var runtime = await manager.GetOrCreateInstanceAsync(
-    "3.12.0", 
-    buildDate: new DateTime(2024, 1, 15));
-
-// Get the latest build (no build date specified)
-var latest = await manager.GetOrCreateInstanceAsync("3.12.0");
-
-// Find first release on or after a specific date
-var runtimeAfterDate = await manager.GetOrCreateInstanceAsync(
-    "3.12.0",
-    buildDate: new DateTime(2024, 2, 1)); // Gets first release >= 2024-02-01
-```
-
-### Listing All Instances
-
-```csharp
-var manager = new PythonManager("./python-instances", githubClient);
-var instances = manager.ListInstances();
-
-foreach (var instance in instances)
+var installs = await PythonEnvironment.ListInstallationsAsync();
+foreach (var install in installs)
 {
-    Console.WriteLine($"Version: {instance.PythonVersion}");
-    Console.WriteLine($"Build Date: {instance.BuildDate:yyyy-MM-dd}"); // BuildDate is now DateTime
-    Console.WriteLine($"Directory: {instance.Directory}");
-    Console.WriteLine($"Installed: {instance.InstallationDate:yyyy-MM-dd HH:mm:ss}");
-    Console.WriteLine();
-}
-```
-
-### Finding Available Versions
-
-```csharp
-var manager = new PythonManager("./python-instances", githubClient);
-
-// List all available versions
-var versions = await manager.ListAvailableVersionsAsync();
-foreach (var version in versions)
-{
-    Console.WriteLine($"Available: {version}");
-}
-```
-
-## Resource Management
-
-### Disposing Python.NET Runtimes
-
-```csharp
-var netManager = new PythonNetManager("./python-instances", githubClient);
-
-BasePythonRuntime? runtime = null;
-try
-{
-    runtime = await netManager.GetOrCreateInstanceAsync("3.12.0");
-    
-    // Use the runtime
-    var result = await runtime.ExecuteCommandAsync("print('Hello')");
-}
-finally
-{
-    // Dispose Python.NET runtimes
-    if (runtime is IDisposable disposable)
-    {
-        disposable.Dispose();
-    }
-}
-```
-
-### Using Statement Pattern
-
-```csharp
-var netManager = new PythonNetManager("./python-instances", githubClient);
-var runtime = await netManager.GetOrCreateInstanceAsync("3.12.0");
-
-if (runtime is IDisposable disposable)
-{
-    using (disposable)
-    {
-        var result = await runtime.ExecuteCommandAsync("print('Hello')");
-    }
-}
-```
-
-## Advanced Examples
-
-### Building a Python Script Runner Service
-
-```csharp
-public class PythonScriptRunner
-{
-    private readonly PythonManager _pythonManager;
-    private readonly ILogger<PythonScriptRunner> _logger;
-    
-    public PythonScriptRunner(
-        PythonManager pythonManager,
-        ILogger<PythonScriptRunner> logger)
-    {
-        _pythonManager = pythonManager;
-        _logger = logger;
-    }
-    
-    public async Task<ScriptExecutionResult> RunScriptAsync(
-        string scriptPath,
-        string pythonVersion = "3.12.0",
-        IEnumerable<string>? arguments = null)
-    {
-        try
-        {
-            var runtime = await _pythonManager.GetOrCreateInstanceAsync(pythonVersion);
-            var result = await runtime.ExecuteScriptAsync(scriptPath, arguments);
-            
-            return new ScriptExecutionResult
-            {
-                Success = result.ExitCode == 0,
-                Output = result.StandardOutput,
-                Error = result.StandardError,
-                ExitCode = result.ExitCode
-            };
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Script execution failed: {ScriptPath}", scriptPath);
-            throw;
-        }
-    }
+    Console.WriteLine($"{install.Version} at {install.Directory}");
 }
 
-public class ScriptExecutionResult
-{
-    public bool Success { get; set; }
-    public string Output { get; set; } = "";
-    public string Error { get; set; } = "";
-    public int ExitCode { get; set; }
-}
-```
-
-### Isolated Package Installation
-
-```csharp
-public async Task<BasePythonVirtualRuntime> SetupProjectEnvironmentAsync(
-    string projectName,
-    string requirementsPath)
-{
-    var runtime = await _pythonManager.GetOrCreateInstanceAsync("3.12.0");
-    var rootRuntime = (BasePythonRootRuntime)runtime;
-    
-    // Create isolated virtual environment
-    var venv = await rootRuntime.GetOrCreateVirtualEnvironmentAsync(
-        projectName, 
-        recreateIfExists: true);
-    
-    // Install requirements
-    await venv.InstallRequirementsAsync(requirementsPath);
-    
-    return venv;
-}
+await PythonEnvironment.RemoveAsync(installs[0]);   // deletes the install and all its environments
 ```
 
 ## See Also
 
 - [Getting Started](Getting-Started.md)
-- [API Reference](API-Reference.md)
+- [Quick Reference](Quick-Reference.md)
 - [Architecture](Architecture.md)
 - [Error Handling](Error-Handling.md)
-
