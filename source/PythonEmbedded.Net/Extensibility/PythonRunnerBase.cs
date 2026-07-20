@@ -1,4 +1,6 @@
-namespace PythonEmbedded.Net;
+using PythonEmbedded.Net.Models;
+
+namespace PythonEmbedded.Net.Extensibility;
 
 /// <summary>
 /// Optional base for <see cref="IPythonRunner"/> implementations. The subprocess and in-process

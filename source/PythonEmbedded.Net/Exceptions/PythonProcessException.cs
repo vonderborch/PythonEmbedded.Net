@@ -1,4 +1,6 @@
-namespace PythonEmbedded.Net;
+using PythonEmbedded.Net.Models;
+
+namespace PythonEmbedded.Net.Exceptions;
 
 /// <summary>Thrown when a Python process exits with a nonzero code (or is killed on timeout); carries the full output.</summary>
 public sealed class PythonProcessException : PythonException

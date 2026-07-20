@@ -1,5 +1,8 @@
 using System.Net;
 using Microsoft.Extensions.Logging.Abstractions;
+using PythonEmbedded.Net.Exceptions;
+using PythonEmbedded.Net.Extensibility;
+using PythonEmbedded.Net.Models;
 
 namespace PythonEmbedded.Net.Test;
 

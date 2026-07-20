@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
+using PythonEmbedded.Net.Exceptions;
 
-namespace PythonEmbedded.Net;
+namespace PythonEmbedded.Net.Models;
 
 /// <summary>
 /// The platform identifier used by python-build-standalone asset names,

@@ -1,4 +1,6 @@
-namespace PythonEmbedded.Net;
+using PythonEmbedded.Net.Exceptions;
+
+namespace PythonEmbedded.Net.Models;
 
 /// <summary>Optional settings for a single run.</summary>
 public sealed record RunOptions

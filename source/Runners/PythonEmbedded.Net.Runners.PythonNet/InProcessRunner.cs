@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using Python.Runtime;
+using PythonEmbedded.Net.Extensibility;
+using PythonEmbedded.Net.Models;
 
 namespace PythonEmbedded.Net.Runners.PythonNet;
 

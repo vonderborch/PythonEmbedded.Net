@@ -1,4 +1,6 @@
 using Python.Runtime;
+using PythonEmbedded.Net.Exceptions;
+using PythonException = PythonEmbedded.Net.Exceptions.PythonException;
 
 namespace PythonEmbedded.Net.Runners.PythonNet;
 

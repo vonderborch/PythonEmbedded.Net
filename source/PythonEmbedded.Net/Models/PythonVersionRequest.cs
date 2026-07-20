@@ -1,4 +1,4 @@
-namespace PythonEmbedded.Net;
+namespace PythonEmbedded.Net.Models;
 
 /// <summary>
 /// A version constraint parsed from user input: <c>"latest"</c>, <c>"3"</c>, <c>"3.13"</c>,

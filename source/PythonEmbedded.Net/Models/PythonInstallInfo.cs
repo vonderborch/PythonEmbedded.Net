@@ -1,4 +1,6 @@
-namespace PythonEmbedded.Net;
+using PythonEmbedded.Net.Extensibility;
+
+namespace PythonEmbedded.Net.Models;
 
 /// <summary>Metadata describing a materialized Python installation, returned by an <see cref="IPythonSource"/>.</summary>
 /// <param name="Version">The concrete version that was installed.</param>

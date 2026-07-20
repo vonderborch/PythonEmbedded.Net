@@ -1,5 +1,9 @@
 using System.Formats.Tar;
 using System.IO.Compression;
+using PythonEmbedded.Net.Exceptions;
+using PythonEmbedded.Net.Internals;
+using PythonEmbedded.Net.Models;
+using PythonEmbedded.Net.Sources;
 
 namespace PythonEmbedded.Net.Test;
 

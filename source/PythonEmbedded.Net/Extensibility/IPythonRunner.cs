@@ -1,4 +1,6 @@
-namespace PythonEmbedded.Net;
+using PythonEmbedded.Net.Models;
+
+namespace PythonEmbedded.Net.Extensibility;
 
 /// <summary>
 /// How Python code executes. The default runs a buffered subprocess; satellites can run in-process

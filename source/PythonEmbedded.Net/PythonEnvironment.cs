@@ -1,3 +1,6 @@
+using PythonEmbedded.Net.Extensibility;
+using PythonEmbedded.Net.Internals;
+
 namespace PythonEmbedded.Net;
 
 /// <summary>
@@ -18,8 +21,14 @@ public static class PythonEnvironment
     private static PythonHost? _host;
 
     /// <summary>
-    /// Configures the library. Must be called before any other member; throws
-    /// <see cref="InvalidOperationException"/> once an installation or environment has been requested.
+    /// Configures the library's <i>defaults</i> — <see cref="PythonOptions.Installer"/> and
+    /// <see cref="PythonOptions.Runner"/> apply to every environment unless overridden per-environment via
+    /// the <c>installer</c>/<c>runner</c> parameters on <see cref="GetEnvironmentAsync"/> and
+    /// <see cref="PythonInstallation.GetEnvironmentAsync"/>. An overridden installer is recorded and fixed
+    /// for that environment's lifetime (it materially affects how the environment was built on disk); an
+    /// overridden runner is not recorded — it's a pure execution-time concern and can differ on every fetch.
+    /// Must be called before any other member; throws <see cref="InvalidOperationException"/> once an
+    /// installation or environment has been requested.
     /// </summary>
     public static void Configure(Action<PythonOptions> configure)
     {
@@ -40,11 +49,14 @@ public static class PythonEnvironment
     /// Gets (installing and creating on first use) a named virtual environment for the requested
     /// version. <paramref name="version"/> accepts <c>"latest"</c>, <c>"3"</c>, <c>"3.13"</c>, or
     /// <c>"3.13.2"</c>. <paramref name="name"/> is required — the same version can back multiple
-    /// independent environments, each identified by its own name.
+    /// independent environments, each identified by its own name. <paramref name="installer"/> and
+    /// <paramref name="runner"/> override the <see cref="Configure"/>d defaults for this environment;
+    /// see <see cref="Configure"/> for how each is (or isn't) recorded.
     /// </summary>
     public static Task<PythonVirtualEnvironment> GetEnvironmentAsync(
-        string version, string name, CancellationToken ct = default)
-        => Host.GetEnvironmentAsync(version, name, ct);
+        string version, string name, CancellationToken ct = default,
+        IPackageInstaller? installer = null, IPythonRunner? runner = null)
+        => Host.GetEnvironmentAsync(version, name, ct, installer, runner);
 
     /// <summary>Gets (installing on first use) a Python installation for the requested version.</summary>
     public static Task<PythonInstallation> GetInstallationAsync(string version, CancellationToken ct = default)
@@ -62,8 +74,9 @@ public static class PythonEnvironment
     }
 
     /// <inheritdoc cref="GetEnvironmentAsync"/>
-    public static PythonVirtualEnvironment GetEnvironment(string version, string name)
-        => GetEnvironmentAsync(version, name).GetAwaiter().GetResult();
+    public static PythonVirtualEnvironment GetEnvironment(
+        string version, string name, IPackageInstaller? installer = null, IPythonRunner? runner = null)
+        => GetEnvironmentAsync(version, name, default, installer, runner).GetAwaiter().GetResult();
 
     /// <inheritdoc cref="GetInstallationAsync"/>
     public static PythonInstallation GetInstallation(string version)

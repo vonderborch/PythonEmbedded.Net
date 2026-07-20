@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using PythonEmbedded.Net.Exceptions;
+using PythonEmbedded.Net.Models;
 
 namespace PythonEmbedded.Net;
 

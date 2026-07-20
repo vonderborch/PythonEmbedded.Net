@@ -1,3 +1,5 @@
+using PythonEmbedded.Net.Models;
+
 namespace PythonEmbedded.Net.Test;
 
 [TestFixture]
@@ -8,7 +10,7 @@ public class PythonVersionTests
     [TestCase("3.14.0rc1", 3, 14, 0, "rc1")]
     public void Parse_FullVersions(string input, int major, int minor, int patch, string? suffix)
     {
-        PythonVersion version = PythonVersion.Parse(input);
+        Models.PythonVersion version = Models.PythonVersion.Parse(input);
         Assert.Multiple(() =>
         {
             Assert.That(version.Major, Is.EqualTo(major));
@@ -24,19 +26,19 @@ public class PythonVersionTests
     [TestCase("")]
     [TestCase("python3")]
     public void Parse_Rejects_PartialOrInvalid(string input)
-        => Assert.That(() => PythonVersion.Parse(input), Throws.TypeOf<FormatException>());
+        => Assert.That(() => Models.PythonVersion.Parse(input), Throws.TypeOf<FormatException>());
 
     [Test]
     public void CompareTo_Orders_Numerically_And_PreReleaseFirst()
     {
-        PythonVersion[] versions =
+        Models.PythonVersion[] versions =
         [
-            PythonVersion.Parse("3.15.0b3"),
-            PythonVersion.Parse("3.13.14"),
-            PythonVersion.Parse("3.15.0"),
-            PythonVersion.Parse("3.9.2"),
+            Models.PythonVersion.Parse("3.15.0b3"),
+            Models.PythonVersion.Parse("3.13.14"),
+            Models.PythonVersion.Parse("3.15.0"),
+            Models.PythonVersion.Parse("3.9.2"),
         ];
-        PythonVersion[] sorted = [.. versions.OrderBy(v => v)];
+        Models.PythonVersion[] sorted = [.. versions.OrderBy(v => v)];
 
         Assert.That(
             sorted.Select(v => v.ToString()),
@@ -54,7 +56,7 @@ public class PythonVersionTests
     [TestCase("3.15.0b3", "3.15.0b3", true)]
     public void Request_Matches(string request, string version, bool expected)
         => Assert.That(
-            PythonVersionRequest.Parse(request).Matches(PythonVersion.Parse(version)),
+            PythonVersionRequest.Parse(request).Matches(Models.PythonVersion.Parse(version)),
             Is.EqualTo(expected));
 
     [TestCase("banana")]

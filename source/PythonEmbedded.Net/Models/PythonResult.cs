@@ -1,4 +1,6 @@
-namespace PythonEmbedded.Net;
+using PythonEmbedded.Net.Exceptions;
+
+namespace PythonEmbedded.Net.Models;
 
 /// <summary>The outcome of a buffered Python run.</summary>
 public sealed record PythonResult(int ExitCode, string StandardOutput, string StandardError, TimeSpan Duration)

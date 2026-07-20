@@ -1,9 +1,10 @@
 using System.Text.RegularExpressions;
+using PythonEmbedded.Net.Models;
 
-namespace PythonEmbedded.Net;
+namespace PythonEmbedded.Net.Internals;
 
 /// <summary>A parsed python-build-standalone <c>install_only</c> archive file name.</summary>
-internal sealed partial record ArchiveName(string FileName, PythonVersion Version, string Tag, string Triple)
+internal sealed partial record ArchiveName(string FileName, Models.PythonVersion Version, string Tag, string Triple)
 {
     // e.g. cpython-3.13.14+20260623-aarch64-apple-darwin-install_only.tar.gz
     [GeneratedRegex(@"^cpython-(?<version>\d+\.\d+\.\d+[a-z0-9]*)\+(?<tag>\d+)-(?<triple>[a-z0-9_\-]+?)-install_only(_stripped)?\.(tar\.gz|tgz|zip)$")]
@@ -12,7 +13,7 @@ internal sealed partial record ArchiveName(string FileName, PythonVersion Versio
     public static ArchiveName? TryParse(string fileName)
     {
         Match match = Pattern().Match(fileName);
-        if (!match.Success || !PythonVersion.TryParse(match.Groups["version"].Value, out PythonVersion version))
+        if (!match.Success || !Models.PythonVersion.TryParse(match.Groups["version"].Value, out Models.PythonVersion version))
         {
             return null;
         }

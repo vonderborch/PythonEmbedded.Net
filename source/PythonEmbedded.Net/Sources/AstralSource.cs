@@ -1,7 +1,11 @@
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
+using PythonEmbedded.Net.Exceptions;
+using PythonEmbedded.Net.Extensibility;
+using PythonEmbedded.Net.Internals;
+using PythonEmbedded.Net.Models;
 
-namespace PythonEmbedded.Net;
+namespace PythonEmbedded.Net.Sources;
 
 /// <summary>
 /// Downloads Python from astral-sh/python-build-standalone GitHub releases.
@@ -37,7 +41,7 @@ internal sealed class AstralSource : PythonSourceBase
             return null;
         }
 
-        ArchiveName? archive = ArchiveName.SelectBest(checksums.Keys, request, context.Platform);
+        Internals.ArchiveName? archive = Internals.ArchiveName.SelectBest(checksums.Keys, request, context.Platform);
         if (archive is null)
         {
             context.Logger.LogDebug(

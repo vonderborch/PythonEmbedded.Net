@@ -1,4 +1,4 @@
-namespace PythonEmbedded.Net;
+namespace PythonEmbedded.Net.Models;
 
 /// <summary>A package installation request beyond a simple package name.</summary>
 public sealed record PackageRequest

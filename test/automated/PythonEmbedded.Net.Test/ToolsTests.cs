@@ -1,3 +1,7 @@
+using PythonEmbedded.Net.Exceptions;
+using PythonEmbedded.Net.Extensibility;
+using PythonEmbedded.Net.Internals;
+
 namespace PythonEmbedded.Net.Test;
 
 [TestFixture]

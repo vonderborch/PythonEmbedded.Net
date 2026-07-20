@@ -1,4 +1,4 @@
-namespace PythonEmbedded.Net;
+namespace PythonEmbedded.Net.Exceptions;
 
 /// <summary>The exception thrown for all failures in PythonEmbedded.Net (except process failures, see <see cref="PythonProcessException"/>).</summary>
 public class PythonException : Exception

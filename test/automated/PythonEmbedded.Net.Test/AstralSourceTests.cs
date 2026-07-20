@@ -2,6 +2,10 @@ using System.Formats.Tar;
 using System.IO.Compression;
 using System.Net;
 using System.Security.Cryptography;
+using PythonEmbedded.Net.Exceptions;
+using PythonEmbedded.Net.Internals;
+using PythonEmbedded.Net.Models;
+using PythonEmbedded.Net.Sources;
 
 namespace PythonEmbedded.Net.Test;
 
@@ -185,14 +189,14 @@ public class AstralSourceTests
     {
         Assert.Multiple(() =>
         {
-            ArchiveName? parsed = ArchiveName.TryParse("cpython-3.13.14+20260623-aarch64-apple-darwin-install_only.tar.gz");
+            Internals.ArchiveName? parsed = Internals.ArchiveName.TryParse("cpython-3.13.14+20260623-aarch64-apple-darwin-install_only.tar.gz");
             Assert.That(parsed, Is.Not.Null);
             Assert.That(parsed!.Version.ToString(), Is.EqualTo("3.13.14"));
             Assert.That(parsed.Tag, Is.EqualTo("20260623"));
             Assert.That(parsed.Triple, Is.EqualTo("aarch64-apple-darwin"));
 
-            Assert.That(ArchiveName.TryParse("cpython-3.13.14+20260623-aarch64-apple-darwin-full.tar.zst"), Is.Null);
-            Assert.That(ArchiveName.TryParse("not-an-archive.tar.gz"), Is.Null);
+            Assert.That(Internals.ArchiveName.TryParse("cpython-3.13.14+20260623-aarch64-apple-darwin-full.tar.zst"), Is.Null);
+            Assert.That(Internals.ArchiveName.TryParse("not-an-archive.tar.gz"), Is.Null);
         });
     }
 }

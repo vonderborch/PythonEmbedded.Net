@@ -1,4 +1,6 @@
 using PythonEmbedded.Net;
+using PythonEmbedded.Net.Extensibility;
+using PythonEmbedded.Net.Models;
 
 namespace PythonEmbedded.Net.Test;
 
@@ -41,12 +43,12 @@ public sealed class TempRoot : IDisposable
 /// <summary>A source that fabricates a minimal install tree with a dummy python executable.</summary>
 public sealed class FakeSource : IPythonSource
 {
-    private readonly PythonVersion? _version;
+    private readonly Models.PythonVersion? _version;
 
     public FakeSource(string? version = "3.13.5", string name = "fake")
     {
         Name = name;
-        _version = version is null ? null : PythonVersion.Parse(version);
+        _version = version is null ? null : Models.PythonVersion.Parse(version);
     }
 
     public string Name { get; }
@@ -79,7 +81,12 @@ public sealed class FakeSource : IPythonSource
 /// <summary>An installer that fabricates a venv-shaped directory without running anything.</summary>
 public sealed class FakeInstaller : IPackageInstaller
 {
-    public string Name => "fake";
+    public FakeInstaller(string name = "fake")
+    {
+        Name = name;
+    }
+
+    public string Name { get; }
 
     public int CreateCount { get; private set; }
 

@@ -1,4 +1,6 @@
-namespace PythonEmbedded.Net;
+using PythonEmbedded.Net.Models;
+
+namespace PythonEmbedded.Net.Extensibility;
 
 /// <summary>
 /// Where Python installations come from. Implementations materialize a full install tree on request

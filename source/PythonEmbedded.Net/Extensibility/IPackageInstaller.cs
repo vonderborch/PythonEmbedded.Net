@@ -1,4 +1,6 @@
-namespace PythonEmbedded.Net;
+using PythonEmbedded.Net.Models;
+
+namespace PythonEmbedded.Net.Extensibility;
 
 /// <summary>
 /// How virtual environments are created and packages managed (pip by default; uv/conda/poetry via

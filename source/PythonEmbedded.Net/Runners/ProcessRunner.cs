@@ -1,4 +1,7 @@
-namespace PythonEmbedded.Net;
+using PythonEmbedded.Net.Extensibility;
+using PythonEmbedded.Net.Models;
+
+namespace PythonEmbedded.Net.Runners;
 
 /// <summary>The default <see cref="IPythonRunner"/>: a buffered one-shot subprocess.</summary>
 internal sealed class ProcessRunner : PythonRunnerBase

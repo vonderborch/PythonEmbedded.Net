@@ -1,4 +1,5 @@
 using PythonEmbedded.Net;
+using PythonEmbedded.Net.Models;
 
 // Manual playground: point the library at the test fixture archives and exercise the happy path.
 // Run test/tools/fetch-fixtures.sh first.

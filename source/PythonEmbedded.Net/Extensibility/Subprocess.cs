@@ -1,7 +1,9 @@
 using System.Diagnostics;
 using System.Text;
+using PythonEmbedded.Net.Exceptions;
+using PythonEmbedded.Net.Models;
 
-namespace PythonEmbedded.Net;
+namespace PythonEmbedded.Net.Extensibility;
 
 /// <summary>
 /// Runs an external process with buffered output. Used by the built-in runner and pip installer,

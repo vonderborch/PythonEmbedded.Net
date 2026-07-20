@@ -1,6 +1,8 @@
 using System.Text.Json;
+using PythonEmbedded.Net.Exceptions;
+using PythonEmbedded.Net.Models;
 
-namespace PythonEmbedded.Net;
+namespace PythonEmbedded.Net.Extensibility;
 
 /// <summary>
 /// Optional base for <see cref="IPackageInstaller"/> implementations. Hoists the patterns repeated

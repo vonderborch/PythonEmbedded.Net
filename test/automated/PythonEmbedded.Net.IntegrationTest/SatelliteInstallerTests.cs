@@ -1,4 +1,7 @@
 using PythonEmbedded.Net;
+using PythonEmbedded.Net.Extensibility;
+using PythonEmbedded.Net.Internals;
+using PythonEmbedded.Net.Models;
 using PythonEmbedded.Net.PackageManagers.Conda;
 using PythonEmbedded.Net.PackageManagers.Poetry;
 using PythonEmbedded.Net.Test;

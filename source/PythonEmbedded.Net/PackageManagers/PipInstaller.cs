@@ -1,4 +1,7 @@
-namespace PythonEmbedded.Net;
+using PythonEmbedded.Net.Extensibility;
+using PythonEmbedded.Net.Models;
+
+namespace PythonEmbedded.Net.PackageManagers;
 
 /// <summary>The default <see cref="IPackageInstaller"/>: <c>python -m venv</c> + <c>python -m pip</c>.</summary>
 internal sealed class PipInstaller : PackageInstallerBase

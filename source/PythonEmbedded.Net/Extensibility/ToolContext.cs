@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
 
-namespace PythonEmbedded.Net;
+namespace PythonEmbedded.Net.Extensibility;
 
 /// <summary>What a tool provisioning callback gets to work with.</summary>
 public sealed class ToolContext

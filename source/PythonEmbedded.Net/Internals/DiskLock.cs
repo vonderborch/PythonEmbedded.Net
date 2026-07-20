@@ -1,4 +1,6 @@
-namespace PythonEmbedded.Net;
+using PythonEmbedded.Net.Exceptions;
+
+namespace PythonEmbedded.Net.Internals;
 
 /// <summary>
 /// A cross-process exclusive lock backed by a file opened with <see cref="FileShare.None"/>.

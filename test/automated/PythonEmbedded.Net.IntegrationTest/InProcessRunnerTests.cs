@@ -1,4 +1,7 @@
 using PythonEmbedded.Net;
+using PythonEmbedded.Net.Exceptions;
+using PythonEmbedded.Net.Internals;
+using PythonEmbedded.Net.Models;
 using PythonEmbedded.Net.Runners.PythonNet;
 using PythonEmbedded.Net.Test;
 

@@ -1,5 +1,10 @@
 using System.Reflection;
 using Microsoft.Extensions.Logging;
+using PythonEmbedded.Net.Extensibility;
+using PythonEmbedded.Net.Internals;
+using PythonEmbedded.Net.PackageManagers;
+using PythonEmbedded.Net.Runners;
+using PythonEmbedded.Net.Sources;
 
 namespace PythonEmbedded.Net;
 
@@ -35,10 +40,21 @@ public sealed class PythonOptions
     /// </summary>
     public IList<IPythonSource> Sources { get; }
 
-    /// <summary>How environments are created and packages managed. Defaults to venv + pip.</summary>
+    /// <summary>
+    /// Default for how environments are created and packages managed. Defaults to venv + pip.
+    /// Overridable per environment via the <c>installer</c> parameter on
+    /// <see cref="PythonEnvironment.GetEnvironmentAsync"/>/<see cref="PythonInstallation.GetEnvironmentAsync"/>;
+    /// once an environment is created (with this default or an override), its installer is recorded and
+    /// fixed for that environment's lifetime.
+    /// </summary>
     public IPackageInstaller Installer { get; set; }
 
-    /// <summary>How Python code executes. Defaults to a buffered subprocess.</summary>
+    /// <summary>
+    /// Default for how Python code executes. Defaults to a buffered subprocess. Overridable per environment
+    /// via the <c>runner</c> parameter on <see cref="PythonEnvironment.GetEnvironmentAsync"/>/
+    /// <see cref="PythonInstallation.GetEnvironmentAsync"/>; unlike <see cref="Installer"/>, the runner is not
+    /// recorded — it's a pure execution-time concern and can differ on every fetch of the same environment.
+    /// </summary>
     public IPythonRunner Runner { get; set; }
 
     /// <summary>GitHub API token used for release lookups; defaults to the <c>GITHUB_TOKEN</c> environment variable.</summary>

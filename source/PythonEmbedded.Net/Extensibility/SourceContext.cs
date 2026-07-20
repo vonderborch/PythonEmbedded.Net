@@ -1,8 +1,10 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using PythonEmbedded.Net.Exceptions;
+using PythonEmbedded.Net.Models;
 
-namespace PythonEmbedded.Net;
+namespace PythonEmbedded.Net.Extensibility;
 
 /// <summary>
 /// Shared plumbing handed to <see cref="IPythonSource"/> implementations: HTTP access,

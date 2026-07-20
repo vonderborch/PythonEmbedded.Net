@@ -1,4 +1,6 @@
 using PythonEmbedded.Net;
+using PythonEmbedded.Net.Internals;
+using PythonEmbedded.Net.Models;
 using PythonEmbedded.Net.PackageManagers.Uv;
 using PythonEmbedded.Net.Test;
 

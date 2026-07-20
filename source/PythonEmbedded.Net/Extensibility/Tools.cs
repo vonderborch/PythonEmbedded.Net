@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Logging;
+using PythonEmbedded.Net.Exceptions;
+using PythonEmbedded.Net.Internals;
 
-namespace PythonEmbedded.Net;
+namespace PythonEmbedded.Net.Extensibility;
 
 /// <summary>
 /// Resolves external tools (uv, poetry, micromamba, ...) strictly runtime-locally — system-installed

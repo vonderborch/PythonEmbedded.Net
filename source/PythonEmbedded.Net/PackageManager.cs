@@ -1,15 +1,21 @@
+using PythonEmbedded.Net.Extensibility;
+using PythonEmbedded.Net.Models;
+
 namespace PythonEmbedded.Net;
 
-/// <summary>Package operations for one environment, delegating to the configured <see cref="IPackageInstaller"/>.</summary>
+/// <summary>
+/// Package operations for one environment, delegating to the <see cref="IPackageInstaller"/> that
+/// created it (fixed for the environment's lifetime; see <see cref="PythonOptions.Installer"/>).
+/// </summary>
 public sealed class PackageManager
 {
     private readonly PythonVirtualEnvironment _env;
-    private readonly PythonHost _host;
+    private readonly IPackageInstaller _installer;
 
-    internal PackageManager(PythonVirtualEnvironment env, PythonHost host)
+    internal PackageManager(PythonVirtualEnvironment env, IPackageInstaller installer)
     {
         _env = env;
-        _host = host;
+        _installer = installer;
     }
 
     /// <summary>Installs a package, e.g. <c>"requests"</c> or <c>"requests==2.31"</c>.</summary>
@@ -21,18 +27,18 @@ public sealed class PackageManager
 
     /// <summary>Installs from a full request (multiple packages, requirements file, index URL, extra args).</summary>
     public Task InstallAsync(PackageRequest request, CancellationToken ct = default)
-        => _host.Options.Installer.InstallAsync(_env, request, ct);
+        => _installer.InstallAsync(_env, request, ct);
 
     /// <summary>Uninstalls a package.</summary>
     public Task UninstallAsync(string package, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(package);
-        return _host.Options.Installer.UninstallAsync(_env, package, ct);
+        return _installer.UninstallAsync(_env, package, ct);
     }
 
     /// <summary>Lists installed packages.</summary>
     public Task<IReadOnlyList<InstalledPackage>> ListAsync(CancellationToken ct = default)
-        => _host.Options.Installer.ListAsync(_env, ct);
+        => _installer.ListAsync(_env, ct);
 
     /// <inheritdoc cref="InstallAsync(string, CancellationToken)"/>
     public void Install(string package) => InstallAsync(package).GetAwaiter().GetResult();

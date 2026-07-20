@@ -1,8 +1,11 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using PythonEmbedded.Net.Exceptions;
+using PythonEmbedded.Net.Extensibility;
+using PythonEmbedded.Net.Models;
 
-namespace PythonEmbedded.Net;
+namespace PythonEmbedded.Net.Internals;
 
 /// <summary>
 /// The internal engine behind the static <see cref="PythonEnvironment"/> facade: owns the on-disk layout,
@@ -96,13 +99,17 @@ internal sealed class PythonHost
             $"Sources tried: {string.Join(", ", Options.Sources.Select(s => s.Name))}.");
     }
 
-    public async Task<PythonVirtualEnvironment> GetEnvironmentAsync(string version, string name, CancellationToken ct)
+    public async Task<PythonVirtualEnvironment> GetEnvironmentAsync(
+        string version, string name, CancellationToken ct,
+        IPackageInstaller? installer = null, IPythonRunner? runner = null)
     {
         PythonInstallation install = await GetInstallationAsync(version, ct).ConfigureAwait(false);
-        return await GetEnvironmentAsync(install, name, ct).ConfigureAwait(false);
+        return await GetEnvironmentAsync(install, name, ct, installer, runner).ConfigureAwait(false);
     }
 
-    public async Task<PythonVirtualEnvironment> GetEnvironmentAsync(PythonInstallation install, string name, CancellationToken ct)
+    public async Task<PythonVirtualEnvironment> GetEnvironmentAsync(
+        PythonInstallation install, string name, CancellationToken ct,
+        IPackageInstaller? installer = null, IPythonRunner? runner = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         if (name.Any(c => !char.IsAsciiLetterOrDigit(c) && c is not '-' and not '_' and not '.'))
@@ -112,7 +119,7 @@ internal sealed class PythonHost
         }
 
         string envDirectory = Path.Combine(EnvsDirectory, install.InstallId, name);
-        PythonVirtualEnvironment? existing = TryLoadEnvironment(install, name, envDirectory);
+        PythonVirtualEnvironment? existing = TryLoadEnvironment(install, name, envDirectory, installer, runner);
         if (existing is not null)
         {
             return existing;
@@ -121,7 +128,7 @@ internal sealed class PythonHost
         string lockPath = Path.Combine(LocksDirectory, $"env-{install.InstallId}-{Sanitize(name)}.lock");
         using DiskLock _ = await DiskLock.AcquireAsync(lockPath, Options.LockTimeout, ct).ConfigureAwait(false);
 
-        existing = TryLoadEnvironment(install, name, envDirectory);
+        existing = TryLoadEnvironment(install, name, envDirectory, installer, runner);
         if (existing is not null)
         {
             return existing;
@@ -134,10 +141,12 @@ internal sealed class PythonHost
         }
 
         Directory.CreateDirectory(Path.GetDirectoryName(envDirectory)!);
-        _logger.LogInformation("Creating environment '{Name}' for {InstallId} via {Installer}", name, install.InstallId, Options.Installer.Name);
+        IPackageInstaller effectiveInstaller = installer ?? Options.Installer;
+        IPythonRunner effectiveRunner = runner ?? Options.Runner;
+        _logger.LogInformation("Creating environment '{Name}' for {InstallId} via {Installer}", name, install.InstallId, effectiveInstaller.Name);
         try
         {
-            await Options.Installer.CreateEnvironmentAsync(install, envDirectory, ct).ConfigureAwait(false);
+            await effectiveInstaller.CreateEnvironmentAsync(install, envDirectory, ct).ConfigureAwait(false);
         }
         catch (Exception)
         {
@@ -150,11 +159,11 @@ internal sealed class PythonHost
                 PythonErrorKind.EnvironmentFailed,
                 $"Environment created at '{envDirectory}' but no python executable was found in it.");
 
-        EnvMetadata metadata = new(name, install.InstallId, Options.Installer.Name, DateTimeOffset.UtcNow,
+        EnvMetadata metadata = new(name, install.InstallId, effectiveInstaller.Name, DateTimeOffset.UtcNow,
             Path.GetRelativePath(envDirectory, pythonExecutable));
         File.WriteAllText(Path.Combine(envDirectory, EnvMarker), JsonSerializer.Serialize(metadata, JsonOptions));
 
-        return new PythonVirtualEnvironment(install, name, envDirectory, pythonExecutable, isBase: false, this);
+        return new PythonVirtualEnvironment(install, name, envDirectory, pythonExecutable, isBase: false, effectiveInstaller, effectiveRunner);
     }
 
     public Task<IReadOnlyList<PythonInstallation>> ListInstallationsAsync(CancellationToken ct)
@@ -207,6 +216,7 @@ internal sealed class PythonHost
 
         Directory.CreateDirectory(Path.GetDirectoryName(finalDirectory)!);
         Directory.Move(staging, finalDirectory);
+        SysconfigPatcher.Patch(finalDirectory);
 
         InstallMetadata metadata = new(
             info.Version.ToString(), info.SourceName, info.Triple, info.InstalledAt, info.Checksum, relativePython);
@@ -227,7 +237,7 @@ internal sealed class PythonHost
     private PythonInstallation? TryLoadInstallation(string directory)
     {
         InstallMetadata? metadata = TryReadJson<InstallMetadata>(Path.Combine(directory, InstallMarker));
-        if (metadata is null || !PythonVersion.TryParse(metadata.Version, out PythonVersion version))
+        if (metadata is null || !Models.PythonVersion.TryParse(metadata.Version, out Models.PythonVersion version))
         {
             return null;
         }
@@ -242,7 +252,9 @@ internal sealed class PythonHost
             version, directory, executable, metadata.SourceName, Path.GetFileName(directory), this);
     }
 
-    private PythonVirtualEnvironment? TryLoadEnvironment(PythonInstallation install, string name, string envDirectory)
+    private PythonVirtualEnvironment? TryLoadEnvironment(
+        PythonInstallation install, string name, string envDirectory,
+        IPackageInstaller? installer, IPythonRunner? runner)
     {
         EnvMetadata? metadata = TryReadJson<EnvMetadata>(Path.Combine(envDirectory, EnvMarker));
         if (metadata is null)
@@ -256,7 +268,19 @@ internal sealed class PythonHost
             return null;
         }
 
-        return new PythonVirtualEnvironment(install, name, envDirectory, executable, isBase: false, this);
+        // The installer is fixed at creation time (it materially affects how the environment was built
+        // on disk); the runner is a pure execution-time concern and is never recorded or validated.
+        IPackageInstaller effectiveInstaller = installer ?? Options.Installer;
+        if (!string.Equals(effectiveInstaller.Name, metadata.Installer, StringComparison.Ordinal))
+        {
+            throw new PythonException(
+                PythonErrorKind.EnvironmentFailed,
+                $"Environment '{name}' was created with installer '{metadata.Installer}' and cannot be reopened " +
+                $"with '{effectiveInstaller.Name}'. An environment's installer is fixed for its lifetime.");
+        }
+
+        IPythonRunner effectiveRunner = runner ?? Options.Runner;
+        return new PythonVirtualEnvironment(install, name, envDirectory, executable, isBase: false, effectiveInstaller, effectiveRunner);
     }
 
     // ---- plumbing ----

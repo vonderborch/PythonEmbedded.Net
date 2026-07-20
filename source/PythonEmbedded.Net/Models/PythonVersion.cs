@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace PythonEmbedded.Net;
+namespace PythonEmbedded.Net.Models;
 
 /// <summary>A concrete Python version, e.g. <c>3.13.14</c> or <c>3.15.0b3</c>.</summary>
 public readonly partial record struct PythonVersion(int Major, int Minor, int Patch, string? Suffix = null)

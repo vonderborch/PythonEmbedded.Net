@@ -1,6 +1,9 @@
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using PythonEmbedded.Net.Exceptions;
+using PythonEmbedded.Net.Extensibility;
+using PythonEmbedded.Net.Models;
 
 namespace PythonEmbedded.Net.PackageManagers.Conda;
 

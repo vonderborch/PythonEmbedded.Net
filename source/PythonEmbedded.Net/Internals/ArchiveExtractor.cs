@@ -1,7 +1,8 @@
 using System.Formats.Tar;
 using System.IO.Compression;
+using PythonEmbedded.Net.Exceptions;
 
-namespace PythonEmbedded.Net;
+namespace PythonEmbedded.Net.Internals;
 
 /// <summary>Extracts python-build-standalone archives (.tar.gz or .zip) preserving Unix permissions.</summary>
 internal static class ArchiveExtractor

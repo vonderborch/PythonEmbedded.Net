@@ -1,6 +1,9 @@
 using Microsoft.Extensions.Logging;
+using PythonEmbedded.Net.Extensibility;
+using PythonEmbedded.Net.Internals;
+using PythonEmbedded.Net.Models;
 
-namespace PythonEmbedded.Net;
+namespace PythonEmbedded.Net.Sources;
 
 /// <summary>
 /// Installs Python from python-build-standalone <c>install_only</c> archives found in a local directory.
@@ -27,7 +30,7 @@ internal sealed class DirectorySource : PythonSourceBase
             return null;
         }
 
-        ArchiveName? best = ArchiveName.SelectBest(
+        Internals.ArchiveName? best = Internals.ArchiveName.SelectBest(
             Directory.EnumerateFiles(_directory).Select(Path.GetFileName)!,
             request,
             context.Platform);

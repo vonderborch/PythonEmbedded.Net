@@ -1,4 +1,4 @@
-namespace PythonEmbedded.Net;
+namespace PythonEmbedded.Net.Exceptions;
 
 /// <summary>Categorizes a <see cref="PythonException"/> for programmatic handling.</summary>
 public enum PythonErrorKind

@@ -1,3 +1,7 @@
+using PythonEmbedded.Net.Exceptions;
+using PythonEmbedded.Net.Extensibility;
+using PythonEmbedded.Net.Models;
+
 namespace PythonEmbedded.Net;
 
 /// <summary>
@@ -7,19 +11,19 @@ namespace PythonEmbedded.Net;
 /// </summary>
 public sealed class PythonVirtualEnvironment
 {
-    private readonly PythonHost _host;
+    private readonly IPythonRunner _runner;
 
     internal PythonVirtualEnvironment(
         PythonInstallation installation, string name, string directory,
-        string pythonExecutable, bool isBase, PythonHost host)
+        string pythonExecutable, bool isBase, IPackageInstaller installer, IPythonRunner runner)
     {
         Installation = installation;
         Name = name;
         Directory = directory;
         PythonExecutable = pythonExecutable;
         IsBase = isBase;
-        _host = host;
-        Packages = new PackageManager(this, host);
+        _runner = runner;
+        Packages = new PackageManager(this, installer);
     }
 
     /// <summary>The base installation this environment was created from.</summary>
@@ -85,7 +89,7 @@ public sealed class PythonVirtualEnvironment
         RunOptions effective = options ?? new RunOptions();
         PythonInvocation invocation = new(kind, target, args ?? [], effective);
 
-        PythonResult result = await _host.Options.Runner.RunAsync(this, invocation, ct).ConfigureAwait(false);
+        PythonResult result = await _runner.RunAsync(this, invocation, ct).ConfigureAwait(false);
         if (!result.Success && effective.ThrowOnError)
         {
             string what = kind switch

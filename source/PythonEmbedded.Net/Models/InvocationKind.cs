@@ -1,4 +1,4 @@
-namespace PythonEmbedded.Net;
+namespace PythonEmbedded.Net.Models;
 
 /// <summary>What kind of thing a <see cref="PythonInvocation"/> targets.</summary>
 public enum InvocationKind
