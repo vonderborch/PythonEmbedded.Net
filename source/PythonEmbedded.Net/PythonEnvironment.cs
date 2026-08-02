@@ -1,5 +1,6 @@
 using PythonEmbedded.Net.Extensibility;
 using PythonEmbedded.Net.Internals;
+using PythonEmbedded.Net.Models;
 
 namespace PythonEmbedded.Net;
 
@@ -16,7 +17,7 @@ namespace PythonEmbedded.Net;
 /// </summary>
 public static class PythonEnvironment
 {
-    private static readonly Lock SyncRoot = new();
+    private static readonly object SyncRoot = new();
     private static PythonOptions _options = new();
     private static PythonHost? _host;
 
@@ -55,12 +56,13 @@ public static class PythonEnvironment
     /// </summary>
     public static Task<PythonVirtualEnvironment> GetEnvironmentAsync(
         string version, string name, CancellationToken ct = default,
-        IPackageInstaller? installer = null, IPythonRunner? runner = null)
-        => Host.GetEnvironmentAsync(version, name, ct, installer, runner);
+        IPackageInstaller? installer = null, IPythonRunner? runner = null, IProgress<InstallProgress>? progress = null)
+        => Host.GetEnvironmentAsync(version, name, ct, installer, runner, progress);
 
     /// <summary>Gets (installing on first use) a Python installation for the requested version.</summary>
-    public static Task<PythonInstallation> GetInstallationAsync(string version, CancellationToken ct = default)
-        => Host.GetInstallationAsync(version, ct);
+    public static Task<PythonInstallation> GetInstallationAsync(
+        string version, CancellationToken ct = default, IProgress<InstallProgress>? progress = null)
+        => Host.GetInstallationAsync(version, ct, progress);
 
     /// <summary>Lists all installations under the configured root directory.</summary>
     public static Task<IReadOnlyList<PythonInstallation>> ListInstallationsAsync(CancellationToken ct = default)
@@ -75,12 +77,13 @@ public static class PythonEnvironment
 
     /// <inheritdoc cref="GetEnvironmentAsync"/>
     public static PythonVirtualEnvironment GetEnvironment(
-        string version, string name, IPackageInstaller? installer = null, IPythonRunner? runner = null)
-        => GetEnvironmentAsync(version, name, default, installer, runner).GetAwaiter().GetResult();
+        string version, string name, IPackageInstaller? installer = null, IPythonRunner? runner = null,
+        IProgress<InstallProgress>? progress = null)
+        => GetEnvironmentAsync(version, name, default, installer, runner, progress).GetAwaiter().GetResult();
 
     /// <inheritdoc cref="GetInstallationAsync"/>
-    public static PythonInstallation GetInstallation(string version)
-        => GetInstallationAsync(version).GetAwaiter().GetResult();
+    public static PythonInstallation GetInstallation(string version, IProgress<InstallProgress>? progress = null)
+        => GetInstallationAsync(version, default, progress).GetAwaiter().GetResult();
 
     /// <inheritdoc cref="ListInstallationsAsync"/>
     public static IReadOnlyList<PythonInstallation> ListInstallations()
@@ -89,6 +92,17 @@ public static class PythonEnvironment
     /// <inheritdoc cref="RemoveAsync"/>
     public static void Remove(PythonInstallation install)
         => RemoveAsync(install).GetAwaiter().GetResult();
+
+    /// <summary>Resolves (installing on first use) the installation for <paramref name="version"/> and runs its health checks.</summary>
+    public static async Task<DiagnosticsResult> DiagnoseAsync(string version, CancellationToken ct = default)
+    {
+        PythonInstallation install = await GetInstallationAsync(version, ct).ConfigureAwait(false);
+        return await install.DiagnoseAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc cref="DiagnoseAsync"/>
+    public static DiagnosticsResult Diagnose(string version)
+        => DiagnoseAsync(version).GetAwaiter().GetResult();
 
     private static PythonHost Host
     {

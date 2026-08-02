@@ -20,12 +20,14 @@ internal sealed class AstralSource : PythonSourceBase
     public override string Name => "astral";
 
     public override async Task<PythonInstallInfo?> TryInstallAsync(
-        PythonVersionRequest request, string targetDirectory, SourceContext context, CancellationToken ct)
+        PythonVersionRequest request, string targetDirectory, SourceContext context,
+        IProgress<InstallProgress>? progress, CancellationToken ct)
     {
         string? tag;
         IReadOnlyDictionary<string, string> checksums;
         try
         {
+            progress?.Report(new InstallProgress(InstallPhase.ResolvingMetadata, Detail: Name));
             tag = await ResolveLatestTagAsync(context, ct).ConfigureAwait(false);
             if (tag is null)
             {
@@ -51,8 +53,8 @@ internal sealed class AstralSource : PythonSourceBase
         }
 
         Uri downloadUri = new($"https://github.com/{Repository}/releases/download/{tag}/{archive.FileName}");
-        string archivePath = await context.DownloadAsync(downloadUri, checksums[archive.FileName], ct).ConfigureAwait(false);
-        await ArchiveExtractor.ExtractAsync(archivePath, targetDirectory, ct).ConfigureAwait(false);
+        string archivePath = await context.DownloadAsync(downloadUri, checksums[archive.FileName], ct, progress).ConfigureAwait(false);
+        await ArchiveExtractor.ExtractAsync(archivePath, targetDirectory, ct, progress).ConfigureAwait(false);
 
         return new PythonInstallInfo(
             archive.Version, Name, archive.Triple, DateTimeOffset.UtcNow, checksums[archive.FileName]);

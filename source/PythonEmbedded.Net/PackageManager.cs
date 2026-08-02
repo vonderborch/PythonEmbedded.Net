@@ -40,6 +40,23 @@ public sealed class PackageManager
     public Task<IReadOnlyList<InstalledPackage>> ListAsync(CancellationToken ct = default)
         => _installer.ListAsync(_env, ct);
 
+    /// <summary>
+    /// Installs <paramref name="requirementsFile"/> and returns whether the installed package set actually
+    /// changed (false when everything was already satisfied). Not a true dry-run: this runs a real install.
+    /// </summary>
+    public Task<bool> EnsureRequirementsAsync(string requirementsFile, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(requirementsFile);
+        return _installer.EnsureRequirementsAsync(_env, requirementsFile, ct);
+    }
+
+    /// <summary>Lists installed packages for which a newer version is available.</summary>
+    public Task<IReadOnlyList<OutdatedPackage>> ListOutdatedAsync(CancellationToken ct = default)
+        => _installer.ListOutdatedAsync(_env, ct);
+
+    /// <summary>The short identifier of the installer that created this environment, e.g. <c>"pip"</c>.</summary>
+    public string InstallerName => _installer.Name;
+
     /// <inheritdoc cref="InstallAsync(string, CancellationToken)"/>
     public void Install(string package) => InstallAsync(package).GetAwaiter().GetResult();
 
@@ -51,4 +68,10 @@ public sealed class PackageManager
 
     /// <inheritdoc cref="ListAsync"/>
     public IReadOnlyList<InstalledPackage> List() => ListAsync().GetAwaiter().GetResult();
+
+    /// <inheritdoc cref="EnsureRequirementsAsync"/>
+    public bool EnsureRequirements(string requirementsFile) => EnsureRequirementsAsync(requirementsFile).GetAwaiter().GetResult();
+
+    /// <inheritdoc cref="ListOutdatedAsync"/>
+    public IReadOnlyList<OutdatedPackage> ListOutdated() => ListOutdatedAsync().GetAwaiter().GetResult();
 }

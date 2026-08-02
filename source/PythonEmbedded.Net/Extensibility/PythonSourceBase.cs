@@ -16,5 +16,6 @@ public abstract class PythonSourceBase : IPythonSource
 
     /// <inheritdoc />
     public abstract Task<PythonInstallInfo?> TryInstallAsync(
-        PythonVersionRequest request, string targetDirectory, SourceContext context, CancellationToken ct);
+        PythonVersionRequest request, string targetDirectory, SourceContext context,
+        IProgress<InstallProgress>? progress, CancellationToken ct);
 }

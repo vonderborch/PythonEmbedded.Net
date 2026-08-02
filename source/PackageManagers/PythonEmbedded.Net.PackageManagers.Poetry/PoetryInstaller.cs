@@ -69,6 +69,14 @@ public sealed class PoetryInstaller : PackageInstallerBase
     public override Task<IReadOnlyList<InstalledPackage>> ListAsync(PythonVirtualEnvironment env, CancellationToken ct)
         => PipListAsync(env, ct);
 
+    /// <inheritdoc />
+    public override Task<bool> EnsureRequirementsAsync(PythonVirtualEnvironment env, string requirementsFile, CancellationToken ct)
+        => PipEnsureRequirementsAsync(env, requirementsFile, ct);
+
+    /// <inheritdoc />
+    public override Task<IReadOnlyList<OutdatedPackage>> ListOutdatedAsync(PythonVirtualEnvironment env, CancellationToken ct)
+        => PipListOutdatedAsync(env, ct);
+
     /// <summary>
     /// pip-installs poetry. With no <see cref="Version"/> pin it installs into the base interpreter,
     /// landing the binary next to it. A pinned version is installed into a private venv under the

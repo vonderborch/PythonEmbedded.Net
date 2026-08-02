@@ -48,7 +48,8 @@ internal sealed class PythonHost
         return new ToolContext(install, ToolsDirectory, CreateSourceContext());
     }
 
-    public async Task<PythonInstallation> GetInstallationAsync(string version, CancellationToken ct)
+    public async Task<PythonInstallation> GetInstallationAsync(
+        string version, CancellationToken ct, IProgress<InstallProgress>? progress = null)
     {
         EnsureInitialized();
         PythonVersionRequest request = PythonVersionRequest.Parse(version);
@@ -60,6 +61,7 @@ internal sealed class PythonHost
         }
 
         string lockPath = Path.Combine(LocksDirectory, $"install-{Sanitize(request.Raw)}.lock");
+        progress?.Report(new InstallProgress(InstallPhase.WaitingForLock));
         using DiskLock _ = await DiskLock.AcquireAsync(lockPath, Options.LockTimeout, ct).ConfigureAwait(false);
 
         // Another process may have completed the install while we waited for the lock.
@@ -77,14 +79,14 @@ internal sealed class PythonHost
             Directory.CreateDirectory(staging);
             try
             {
-                PythonInstallInfo? info = await source.TryInstallAsync(request, staging, context, ct).ConfigureAwait(false);
+                PythonInstallInfo? info = await source.TryInstallAsync(request, staging, context, progress, ct).ConfigureAwait(false);
                 if (info is null)
                 {
                     TryDeleteDirectory(staging);
                     continue;
                 }
 
-                return CommitInstallation(info, staging);
+                return CommitInstallation(info, staging, progress);
             }
             catch (Exception)
             {
@@ -101,15 +103,15 @@ internal sealed class PythonHost
 
     public async Task<PythonVirtualEnvironment> GetEnvironmentAsync(
         string version, string name, CancellationToken ct,
-        IPackageInstaller? installer = null, IPythonRunner? runner = null)
+        IPackageInstaller? installer = null, IPythonRunner? runner = null, IProgress<InstallProgress>? progress = null)
     {
-        PythonInstallation install = await GetInstallationAsync(version, ct).ConfigureAwait(false);
-        return await GetEnvironmentAsync(install, name, ct, installer, runner).ConfigureAwait(false);
+        PythonInstallation install = await GetInstallationAsync(version, ct, progress).ConfigureAwait(false);
+        return await GetEnvironmentAsync(install, name, ct, installer, runner, progress).ConfigureAwait(false);
     }
 
     public async Task<PythonVirtualEnvironment> GetEnvironmentAsync(
         PythonInstallation install, string name, CancellationToken ct,
-        IPackageInstaller? installer = null, IPythonRunner? runner = null)
+        IPackageInstaller? installer = null, IPythonRunner? runner = null, IProgress<InstallProgress>? progress = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         if (name.Any(c => !char.IsAsciiLetterOrDigit(c) && c is not '-' and not '_' and not '.'))
@@ -126,6 +128,7 @@ internal sealed class PythonHost
         }
 
         string lockPath = Path.Combine(LocksDirectory, $"env-{install.InstallId}-{Sanitize(name)}.lock");
+        progress?.Report(new InstallProgress(InstallPhase.WaitingForLock));
         using DiskLock _ = await DiskLock.AcquireAsync(lockPath, Options.LockTimeout, ct).ConfigureAwait(false);
 
         existing = TryLoadEnvironment(install, name, envDirectory, installer, runner);
@@ -196,7 +199,7 @@ internal sealed class PythonHost
 
     // ---- installation resolution ----
 
-    private PythonInstallation CommitInstallation(PythonInstallInfo info, string staging)
+    private PythonInstallation CommitInstallation(PythonInstallInfo info, string staging, IProgress<InstallProgress>? progress = null)
     {
         string relativePython = info.RelativePythonPath
             ?? (ProbeExecutable(staging, InstallExecutableCandidates) is { } probed
@@ -215,7 +218,9 @@ internal sealed class PythonHost
         }
 
         Directory.CreateDirectory(Path.GetDirectoryName(finalDirectory)!);
+        progress?.Report(new InstallProgress(InstallPhase.Committing));
         Directory.Move(staging, finalDirectory);
+        progress?.Report(new InstallProgress(InstallPhase.Patching));
         SysconfigPatcher.Patch(finalDirectory);
 
         InstallMetadata metadata = new(
@@ -281,6 +286,27 @@ internal sealed class PythonHost
 
         IPythonRunner effectiveRunner = runner ?? Options.Runner;
         return new PythonVirtualEnvironment(install, name, envDirectory, executable, isBase: false, effectiveInstaller, effectiveRunner);
+    }
+
+    // ---- diagnostics ----
+
+    /// <summary>Whether <paramref name="installDirectory"/> has a readable, valid <c>install.json</c> marker.</summary>
+    internal bool HasValidInstallMarker(string installDirectory)
+        => TryReadJson<InstallMetadata>(Path.Combine(installDirectory, InstallMarker)) is not null;
+
+    /// <summary>Whether <paramref name="envDirectory"/> has a readable, valid <c>env.json</c> marker.</summary>
+    internal bool HasValidEnvMarker(string envDirectory)
+        => TryReadJson<EnvMetadata>(Path.Combine(envDirectory, EnvMarker)) is not null;
+
+    /// <summary>Lock files under <see cref="LocksDirectory"/> older than a day — likely abandoned by a crashed process.</summary>
+    internal IReadOnlyList<string> InspectStaleLocks()
+    {
+        DateTime cutoff = DateTime.UtcNow.AddDays(-1);
+        return Directory.Exists(LocksDirectory)
+            ? Directory.EnumerateFiles(LocksDirectory)
+                .Where(file => File.GetLastWriteTimeUtc(file) < cutoff)
+                .ToList()
+            : [];
     }
 
     // ---- plumbing ----

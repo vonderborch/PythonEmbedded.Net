@@ -56,6 +56,27 @@ internal static partial class SysconfigPatcher
         }
     }
 
+    /// <summary>
+    /// Whether <paramref name="installDirectory"/> needs no further patching: Windows and installs
+    /// without a <c>_sysconfigdata_*.py</c> file are trivially "patched" (nothing to do); otherwise
+    /// true only once the file no longer contains the build machine's baked-in <c>/install</c> prefix.
+    /// </summary>
+    internal static bool IsPatched(string installDirectory)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return true;
+        }
+
+        string? sysconfigFile = FindSysconfigDataFile(installDirectory);
+        if (sysconfigFile is null)
+        {
+            return true;
+        }
+
+        return !File.ReadAllText(sysconfigFile).Contains(OldPrefix, StringComparison.Ordinal);
+    }
+
     private static string? FindSysconfigDataFile(string installDirectory)
     {
         // Archive layouts vary (some nest under a "python/" directory, some don't), so search

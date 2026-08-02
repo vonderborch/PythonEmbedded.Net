@@ -2,7 +2,7 @@
     <PropertyGroup>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
-        <TargetFrameworks>net9.0;net10.0</TargetFrameworks>
+        <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
         <RootNamespace>PythonEmbedded.Net.PackageManagers.Poetry</RootNamespace>
         <Title>PythonEmbedded.Net.PackageManagers.Poetry</Title>
         <Description>Poetry-backed dependency installation (pyproject.toml projects) for PythonEmbedded.Net.</Description>
@@ -15,6 +15,9 @@
         <PackageIcon>logo.png</PackageIcon>
         <PackageTags>Python, Local, Embedded, Poetry</PackageTags>
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <Version>2.0.0.46</Version>
+        <AssemblyVersion>2.0.0.46</AssemblyVersion>
+        <FileVersion>2.0.0.46</FileVersion>
     </PropertyGroup>
 
     <ItemGroup>

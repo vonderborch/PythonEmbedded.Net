@@ -90,6 +90,48 @@ public sealed class CondaInstaller : PackageInstallerBase
         return packages.Select(p => new InstalledPackage(p.Name, p.Version)).ToList();
     }
 
+    /// <inheritdoc />
+    /// <remarks>Conda has no requirements-file equivalent (environment.yml is handled via <see cref="InstallAsync"/>'s
+    /// <see cref="PackageRequest.ProjectDirectory"/> path), so this always throws.</remarks>
+    public override Task<bool> EnsureRequirementsAsync(PythonVirtualEnvironment env, string requirementsFile, CancellationToken ct)
+        => throw new PythonException(
+            PythonErrorKind.PackageOperationFailed,
+            "The conda installer has no requirements-file equivalent; use environment.yml via InstallAsync's ProjectDirectory instead.");
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Best-effort: parses <c>micromamba update --dry-run --json</c>, whose output shape is not a stable
+    /// contract. Returns an empty list rather than throwing if the shape is unrecognized.
+    /// </remarks>
+    public override async Task<IReadOnlyList<OutdatedPackage>> ListOutdatedAsync(PythonVirtualEnvironment env, CancellationToken ct)
+    {
+        List<string> args = ["update", "--dry-run", "--json", "--prefix", env.Directory, "--all"];
+        AddChannels(args);
+
+        PythonResult result = await RunMicromambaOrThrowAsync(
+            env.Installation, args, PythonErrorKind.PackageOperationFailed, "micromamba update --dry-run", ct)
+            .ConfigureAwait(false);
+
+        try
+        {
+            MicromambaDryRunDto? dto = JsonSerializer.Deserialize<MicromambaDryRunDto>(result.StandardOutput, JsonOptions);
+            if (dto?.Actions?.Link is null || dto.Actions.Unlink is null)
+            {
+                return [];
+            }
+
+            Dictionary<string, string> currentVersions = dto.Actions.Unlink.ToDictionary(p => p.Name, p => p.Version);
+            return dto.Actions.Link
+                .Where(p => currentVersions.ContainsKey(p.Name))
+                .Select(p => new OutdatedPackage(p.Name, currentVersions[p.Name], p.Version))
+                .ToList();
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
     private void AddChannels(List<string> args)
     {
         foreach (string channel in Channels)
@@ -150,4 +192,11 @@ public sealed class CondaInstaller : PackageInstallerBase
     private sealed record CondaPackage(
         [property: JsonPropertyName("name")] string Name,
         [property: JsonPropertyName("version")] string Version);
+
+    private sealed record MicromambaDryRunDto(
+        [property: JsonPropertyName("actions")] MicromambaActionsDto? Actions);
+
+    private sealed record MicromambaActionsDto(
+        [property: JsonPropertyName("LINK")] List<CondaPackage>? Link,
+        [property: JsonPropertyName("UNLINK")] List<CondaPackage>? Unlink);
 }

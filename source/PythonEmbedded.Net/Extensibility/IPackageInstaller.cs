@@ -22,4 +22,13 @@ public interface IPackageInstaller
 
     /// <summary>Lists the packages installed in <paramref name="env"/>.</summary>
     Task<IReadOnlyList<InstalledPackage>> ListAsync(PythonVirtualEnvironment env, CancellationToken ct);
+
+    /// <summary>
+    /// Installs <paramref name="requirementsFile"/> into <paramref name="env"/> and returns whether the
+    /// installed package set actually changed (false when everything was already satisfied).
+    /// </summary>
+    Task<bool> EnsureRequirementsAsync(PythonVirtualEnvironment env, string requirementsFile, CancellationToken ct);
+
+    /// <summary>Lists packages installed in <paramref name="env"/> for which a newer version is available.</summary>
+    Task<IReadOnlyList<OutdatedPackage>> ListOutdatedAsync(PythonVirtualEnvironment env, CancellationToken ct);
 }

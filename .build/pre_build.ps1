@@ -9,7 +9,7 @@ try {
 
     # Execute the Version Bump script
     $version_bump_script = [System.IO.Path]::Combine($SolutionDir, ".build", "version_bump.py")
-    python3 $version_bump_script --directory $SolutionDir --exclude *Templates* --mode Dialog
+    python3 $version_bump_script --directory $SolutionDir --exclude *Templates* *Runtimes* --mode Dialog
     
     exit 0;
 }

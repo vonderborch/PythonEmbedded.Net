@@ -50,7 +50,7 @@ public class AstralSourceTests
             if (path.EndsWith("/SHA256SUMS"))
             {
                 string sums = string.Join('\n', _archives.Select(kv =>
-                    $"{(BogusChecksums ? new string('0', 64) : Convert.ToHexStringLower(SHA256.HashData(kv.Value)))}  {kv.Key}"));
+                    $"{(BogusChecksums ? new string('0', 64) : Convert.ToHexString(SHA256.HashData(kv.Value)))}  {kv.Key}"));
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(sums) });
             }
 

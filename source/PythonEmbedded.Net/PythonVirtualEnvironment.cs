@@ -1,3 +1,4 @@
+using System.Text.Json;
 using PythonEmbedded.Net.Exceptions;
 using PythonEmbedded.Net.Extensibility;
 using PythonEmbedded.Net.Models;
@@ -11,7 +12,10 @@ namespace PythonEmbedded.Net;
 /// </summary>
 public sealed class PythonVirtualEnvironment
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
+
     private readonly IPythonRunner _runner;
+    private readonly IPackageInstaller _installer;
 
     internal PythonVirtualEnvironment(
         PythonInstallation installation, string name, string directory,
@@ -23,6 +27,7 @@ public sealed class PythonVirtualEnvironment
         PythonExecutable = pythonExecutable;
         IsBase = isBase;
         _runner = runner;
+        _installer = installer;
         Packages = new PackageManager(this, installer);
     }
 
@@ -105,6 +110,85 @@ public sealed class PythonVirtualEnvironment
 
         return result;
     }
+
+    /// <summary>
+    /// Creates a new environment named <paramref name="newName"/> under the same installation, using the
+    /// same installer/runner, and replays this environment's installed package list into it.
+    /// </summary>
+    public async Task<PythonVirtualEnvironment> CloneAsync(string newName, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(newName);
+        IReadOnlyList<InstalledPackage> packages = await Packages.ListAsync(ct).ConfigureAwait(false);
+        PythonVirtualEnvironment clone = await Installation.GetEnvironmentAsync(newName, ct, _installer, _runner).ConfigureAwait(false);
+        if (packages.Count > 0)
+        {
+            await clone.Packages.InstallAsync(
+                new PackageRequest { Packages = packages.Select(p => $"{p.Name}=={p.Version}").ToArray() }, ct)
+                .ConfigureAwait(false);
+        }
+
+        return clone;
+    }
+
+    /// <inheritdoc cref="CloneAsync"/>
+    public PythonVirtualEnvironment Clone(string newName)
+        => CloneAsync(newName).GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Writes this environment's package list as an <see cref="EnvironmentManifest"/> to <paramref name="manifestPath"/>.
+    /// A manifest is a package list, not a binary directory snapshot — venv directories bake in absolute
+    /// paths (<c>pyvenv.cfg</c>, shebangs) that don't survive relocation. Recreate elsewhere with
+    /// <see cref="PythonInstallation.ImportEnvironmentAsync"/>.
+    /// </summary>
+    public async Task ExportManifestAsync(string manifestPath, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(manifestPath);
+        IReadOnlyList<InstalledPackage> packages = await Packages.ListAsync(ct).ConfigureAwait(false);
+        EnvironmentManifest manifest = new(Packages.InstallerName, Installation.Version.ToString(), packages, DateTimeOffset.UtcNow);
+        await File.WriteAllTextAsync(manifestPath, JsonSerializer.Serialize(manifest, JsonOptions), ct).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc cref="ExportManifestAsync"/>
+    public void ExportManifest(string manifestPath)
+        => ExportManifestAsync(manifestPath).GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Runs health checks on this environment: the python executable exists, the <c>env.json</c> marker
+    /// is valid, and a package-manager smoke check (<see cref="PackageManager.ListAsync"/>) doesn't throw.
+    /// </summary>
+    public async Task<DiagnosticsResult> DiagnoseAsync(CancellationToken ct = default)
+    {
+        List<DiagnosticFinding> findings = [];
+
+        if (!File.Exists(PythonExecutable))
+        {
+            findings.Add(new DiagnosticFinding(DiagnosticSeverity.Error, "executable-missing",
+                $"Python executable not found at '{PythonExecutable}'."));
+        }
+
+        if (!Installation.Host.HasValidEnvMarker(Directory))
+        {
+            findings.Add(new DiagnosticFinding(DiagnosticSeverity.Error, "marker-invalid",
+                $"'env.json' under '{Directory}' is missing or unreadable."));
+        }
+
+        try
+        {
+            await Packages.ListAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is PythonException or PythonProcessException)
+        {
+            findings.Add(new DiagnosticFinding(DiagnosticSeverity.Error, "package-manager-failed",
+                $"Package manager smoke check failed: {ex.Message}"));
+        }
+
+        bool isHealthy = findings.All(f => f.Severity != DiagnosticSeverity.Error);
+        return new DiagnosticsResult(isHealthy, findings);
+    }
+
+    /// <inheritdoc cref="DiagnoseAsync"/>
+    public DiagnosticsResult Diagnose()
+        => DiagnoseAsync().GetAwaiter().GetResult();
 
     /// <inheritdoc />
     public override string ToString() => $"{Installation.Version}/{Name} at {Directory}";

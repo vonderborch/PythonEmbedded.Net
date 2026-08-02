@@ -19,4 +19,10 @@ internal sealed class PipInstaller : PackageInstallerBase
 
     public override Task<IReadOnlyList<InstalledPackage>> ListAsync(PythonVirtualEnvironment env, CancellationToken ct)
         => PipListAsync(env, ct);
+
+    public override Task<bool> EnsureRequirementsAsync(PythonVirtualEnvironment env, string requirementsFile, CancellationToken ct)
+        => PipEnsureRequirementsAsync(env, requirementsFile, ct);
+
+    public override Task<IReadOnlyList<OutdatedPackage>> ListOutdatedAsync(PythonVirtualEnvironment env, CancellationToken ct)
+        => PipListOutdatedAsync(env, ct);
 }

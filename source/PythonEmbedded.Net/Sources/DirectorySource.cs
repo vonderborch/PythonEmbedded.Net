@@ -23,7 +23,8 @@ internal sealed class DirectorySource : PythonSourceBase
     public override string Name { get; }
 
     public override async Task<PythonInstallInfo?> TryInstallAsync(
-        PythonVersionRequest request, string targetDirectory, SourceContext context, CancellationToken ct)
+        PythonVersionRequest request, string targetDirectory, SourceContext context,
+        IProgress<InstallProgress>? progress, CancellationToken ct)
     {
         if (!Directory.Exists(_directory))
         {
@@ -41,7 +42,7 @@ internal sealed class DirectorySource : PythonSourceBase
 
         string archivePath = Path.Combine(_directory, best.FileName);
         context.Logger.LogInformation("Installing Python {Version} from archive {Archive}", best.Version, archivePath);
-        await ArchiveExtractor.ExtractAsync(archivePath, targetDirectory, ct).ConfigureAwait(false);
+        await ArchiveExtractor.ExtractAsync(archivePath, targetDirectory, ct, progress).ConfigureAwait(false);
 
         return new PythonInstallInfo(best.Version, Name, best.Triple, DateTimeOffset.UtcNow);
     }

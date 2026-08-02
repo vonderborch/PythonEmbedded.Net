@@ -89,6 +89,35 @@ public sealed class UvInstaller : PackageInstallerBase
         return JsonSerializer.Deserialize<List<InstalledPackage>>(result.StandardOutput, JsonOptions) ?? [];
     }
 
+    /// <inheritdoc />
+    public override async Task<bool> EnsureRequirementsAsync(PythonVirtualEnvironment env, string requirementsFile, CancellationToken ct)
+    {
+        IReadOnlyList<InstalledPackage> before = await ListAsync(env, ct).ConfigureAwait(false);
+        string uv = await EnsureUvAsync(env.Installation, ct).ConfigureAwait(false);
+        await RunOrThrowAsync(
+            uv,
+            ["pip", "install", "--python", env.PythonExecutable, "-r", requirementsFile],
+            PythonErrorKind.PackageOperationFailed,
+            "uv pip install -r",
+            ct: ct).ConfigureAwait(false);
+        IReadOnlyList<InstalledPackage> after = await ListAsync(env, ct).ConfigureAwait(false);
+        return !before.SequenceEqual(after);
+    }
+
+    /// <inheritdoc />
+    public override async Task<IReadOnlyList<OutdatedPackage>> ListOutdatedAsync(PythonVirtualEnvironment env, CancellationToken ct)
+    {
+        string uv = await EnsureUvAsync(env.Installation, ct).ConfigureAwait(false);
+        PythonResult result = await RunOrThrowAsync(
+            uv,
+            ["pip", "list", "--python", env.PythonExecutable, "--outdated", "--format", "json"],
+            PythonErrorKind.PackageOperationFailed,
+            "uv pip list --outdated",
+            ct: ct).ConfigureAwait(false);
+
+        return ParsePipStyleOutdatedJson(result.StandardOutput);
+    }
+
     private Task<string> EnsureUvAsync(PythonInstallation install, CancellationToken ct)
         => Tools.EnsureAsync(install, "uv", ProvisionAsync, ct, version: Version);
 

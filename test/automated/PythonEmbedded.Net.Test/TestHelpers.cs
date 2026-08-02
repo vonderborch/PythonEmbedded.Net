@@ -56,7 +56,8 @@ public sealed class FakeSource : IPythonSource
     public int InstallCount { get; private set; }
 
     public Task<PythonInstallInfo?> TryInstallAsync(
-        PythonVersionRequest request, string targetDirectory, SourceContext context, CancellationToken ct)
+        PythonVersionRequest request, string targetDirectory, SourceContext context,
+        IProgress<InstallProgress>? progress, CancellationToken ct)
     {
         if (_version is null || !request.Matches(_version.Value))
         {
@@ -64,7 +65,9 @@ public sealed class FakeSource : IPythonSource
         }
 
         InstallCount++;
+        progress?.Report(new InstallProgress(InstallPhase.ResolvingMetadata));
         WriteFakePython(targetDirectory);
+        progress?.Report(new InstallProgress(InstallPhase.Extracting));
         return Task.FromResult<PythonInstallInfo?>(new PythonInstallInfo(
             _version.Value, Name, context.Platform.Value, DateTimeOffset.UtcNow));
     }
@@ -74,13 +77,26 @@ public sealed class FakeSource : IPythonSource
         string relative = OperatingSystem.IsWindows() ? "python/python.exe" : "python/bin/python3";
         string path = Path.Combine(root, relative);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllText(path, "fake python");
+        if (OperatingSystem.IsWindows())
+        {
+            File.WriteAllText(path, "fake python");
+            return;
+        }
+
+        // A trivial script rather than opaque bytes so diagnostics' "--version" smoke check can actually run it.
+        File.WriteAllText(path, "#!/bin/sh\nexit 0\n");
+        File.SetUnixFileMode(path,
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+            | UnixFileMode.GroupRead | UnixFileMode.GroupExecute
+            | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
     }
 }
 
 /// <summary>An installer that fabricates a venv-shaped directory without running anything.</summary>
 public sealed class FakeInstaller : IPackageInstaller
 {
+    private readonly Dictionary<string, List<InstalledPackage>> _packagesByEnv = [];
+
     public FakeInstaller(string name = "fake")
     {
         Name = name;
@@ -92,26 +108,79 @@ public sealed class FakeInstaller : IPackageInstaller
 
     public List<PackageRequest> Installed { get; } = [];
 
+    public string? LastRequirementsFile { get; private set; }
+
+    public bool EnsureRequirementsChanged { get; set; } = true;
+
+    public List<OutdatedPackage> OutdatedToReturn { get; set; } = [];
+
     public Task CreateEnvironmentAsync(PythonInstallation install, string envDirectory, CancellationToken ct)
     {
         CreateCount++;
         string relative = OperatingSystem.IsWindows() ? "Scripts/python.exe" : "bin/python";
         string path = Path.Combine(envDirectory, relative);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllText(path, "fake venv python");
+        if (OperatingSystem.IsWindows())
+        {
+            File.WriteAllText(path, "fake venv python");
+        }
+        else
+        {
+            // A trivial script rather than opaque bytes so diagnostics' "--version" smoke check can actually run it.
+            File.WriteAllText(path, "#!/bin/sh\nexit 0\n");
+            File.SetUnixFileMode(path,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+                | UnixFileMode.GroupRead | UnixFileMode.GroupExecute
+                | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+        }
+
         return Task.CompletedTask;
     }
 
     public Task InstallAsync(PythonVirtualEnvironment env, PackageRequest request, CancellationToken ct)
     {
         Installed.Add(request);
+        List<InstalledPackage> packages = GetPackages(env);
+        foreach (string spec in request.Packages)
+        {
+            int split = spec.IndexOf("==", StringComparison.Ordinal);
+            string name = split >= 0 ? spec[..split] : spec;
+            string version = split >= 0 ? spec[(split + 2)..] : "0.0.0";
+            packages.RemoveAll(p => p.Name == name);
+            packages.Add(new InstalledPackage(name, version));
+        }
+
         return Task.CompletedTask;
     }
 
-    public Task UninstallAsync(PythonVirtualEnvironment env, string package, CancellationToken ct) => Task.CompletedTask;
+    public Task UninstallAsync(PythonVirtualEnvironment env, string package, CancellationToken ct)
+    {
+        GetPackages(env).RemoveAll(p => p.Name == package);
+        return Task.CompletedTask;
+    }
 
     public Task<IReadOnlyList<InstalledPackage>> ListAsync(PythonVirtualEnvironment env, CancellationToken ct)
-        => Task.FromResult<IReadOnlyList<InstalledPackage>>([]);
+        => Task.FromResult<IReadOnlyList<InstalledPackage>>(GetPackages(env));
+
+    public Task<bool> EnsureRequirementsAsync(PythonVirtualEnvironment env, string requirementsFile, CancellationToken ct)
+    {
+        LastRequirementsFile = requirementsFile;
+        return Task.FromResult(EnsureRequirementsChanged);
+    }
+
+    public Task<IReadOnlyList<OutdatedPackage>> ListOutdatedAsync(PythonVirtualEnvironment env, CancellationToken ct)
+        => Task.FromResult<IReadOnlyList<OutdatedPackage>>(OutdatedToReturn);
+
+    private List<InstalledPackage> GetPackages(PythonVirtualEnvironment env)
+    {
+        if (!_packagesByEnv.TryGetValue(env.Directory, out List<InstalledPackage>? packages))
+        {
+            packages = [];
+            _packagesByEnv[env.Directory] = packages;
+        }
+
+        return packages;
+    }
 }
 
 /// <summary>A runner that returns a canned result without launching a process.</summary>

@@ -15,6 +15,8 @@ public interface IPythonSource
     /// Returns null if this source cannot satisfy <paramref name="request"/>; otherwise materializes
     /// a complete installation into <paramref name="targetDirectory"/> and returns its metadata.
     /// </summary>
+    /// <param name="progress">Optional progress sink; implementations that download/extract should report through it.</param>
     Task<PythonInstallInfo?> TryInstallAsync(
-        PythonVersionRequest request, string targetDirectory, SourceContext context, CancellationToken ct);
+        PythonVersionRequest request, string targetDirectory, SourceContext context,
+        IProgress<InstallProgress>? progress, CancellationToken ct);
 }

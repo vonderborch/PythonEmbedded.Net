@@ -132,7 +132,7 @@ public class SourceContextTests
     {
         using TempRoot root = new();
         byte[] payload = "archive-bytes"u8.ToArray();
-        string sha256 = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(payload));
+        string sha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(payload));
         CountingHandler handler = new(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new ByteArrayContent(payload),

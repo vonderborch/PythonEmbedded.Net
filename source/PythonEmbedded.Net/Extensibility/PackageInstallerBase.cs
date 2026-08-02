@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using PythonEmbedded.Net.Exceptions;
 using PythonEmbedded.Net.Models;
 
@@ -30,6 +31,12 @@ public abstract class PackageInstallerBase : IPackageInstaller
 
     /// <inheritdoc />
     public abstract Task<IReadOnlyList<InstalledPackage>> ListAsync(PythonVirtualEnvironment env, CancellationToken ct);
+
+    /// <inheritdoc />
+    public abstract Task<bool> EnsureRequirementsAsync(PythonVirtualEnvironment env, string requirementsFile, CancellationToken ct);
+
+    /// <inheritdoc />
+    public abstract Task<IReadOnlyList<OutdatedPackage>> ListOutdatedAsync(PythonVirtualEnvironment env, CancellationToken ct);
 
     /// <summary>Runs a subprocess, throwing <see cref="PythonException"/> with <paramref name="kind"/> when it exits nonzero.</summary>
     protected static async Task<PythonResult> RunOrThrowAsync(
@@ -97,6 +104,54 @@ public abstract class PackageInstallerBase : IPackageInstaller
 
         return JsonSerializer.Deserialize<List<InstalledPackage>>(result.StandardOutput, JsonOptions) ?? [];
     }
+
+    /// <summary>
+    /// Installs <paramref name="requirementsFile"/> via <c>pip install -r</c> (idempotent when everything is
+    /// already satisfied) and reports whether the installed package set changed. This runs a real install
+    /// rather than a true dry-run — pip has no reliable "would install nothing" signal short of diffing
+    /// the package list before and after.
+    /// </summary>
+    protected static async Task<bool> PipEnsureRequirementsAsync(
+        PythonVirtualEnvironment env, string requirementsFile, CancellationToken ct)
+    {
+        IReadOnlyList<InstalledPackage> before = await PipListAsync(env, ct).ConfigureAwait(false);
+        await RunOrThrowAsync(
+            env.PythonExecutable,
+            ["-m", "pip", "install", "--disable-pip-version-check", "-r", requirementsFile],
+            PythonErrorKind.PackageOperationFailed,
+            "pip ensure requirements",
+            ct: ct).ConfigureAwait(false);
+        IReadOnlyList<InstalledPackage> after = await PipListAsync(env, ct).ConfigureAwait(false);
+        return !before.SequenceEqual(after);
+    }
+
+    /// <summary>Plain <c>python -m pip list --outdated --format=json</c>, parsed into <see cref="OutdatedPackage"/>s.</summary>
+    protected static async Task<IReadOnlyList<OutdatedPackage>> PipListOutdatedAsync(PythonVirtualEnvironment env, CancellationToken ct)
+    {
+        PythonResult result = await RunOrThrowAsync(
+            env.PythonExecutable,
+            ["-m", "pip", "list", "--outdated", "--disable-pip-version-check", "--format=json"],
+            PythonErrorKind.PackageOperationFailed,
+            "pip list --outdated",
+            ct: ct).ConfigureAwait(false);
+        return ParsePipStyleOutdatedJson(result.StandardOutput);
+    }
+
+    /// <summary>
+    /// Parses pip-compatible <c>list --outdated --format=json</c> output (pip's keys are snake_case, unlike
+    /// the web-casing <see cref="JsonOptions"/> covers implicitly for <see cref="InstalledPackage"/>). Shared
+    /// by <see cref="PipListOutdatedAsync"/> and any pip-compatible tool (e.g. uv) parsing the same shape.
+    /// </summary>
+    protected static IReadOnlyList<OutdatedPackage> ParsePipStyleOutdatedJson(string json)
+    {
+        List<PipOutdatedDto> dtos = JsonSerializer.Deserialize<List<PipOutdatedDto>>(json, JsonOptions) ?? [];
+        return dtos.Select(d => new OutdatedPackage(d.Name, d.Version, d.LatestVersion)).ToList();
+    }
+
+    private sealed record PipOutdatedDto(
+        [property: JsonPropertyName("name")] string Name,
+        [property: JsonPropertyName("version")] string Version,
+        [property: JsonPropertyName("latest_version")] string? LatestVersion);
 
     /// <summary>Full path to the interpreter inside a venv created at <paramref name="venvDirectory"/>.</summary>
     protected static string GetVenvPythonExecutable(string venvDirectory)

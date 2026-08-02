@@ -52,7 +52,8 @@ public sealed class SourceContext
     /// Downloads <paramref name="uri"/> into the download cache (skipped when already cached and the
     /// checksum matches) and returns the local file path. <paramref name="sha256"/> is verified when provided.
     /// </summary>
-    public async Task<string> DownloadAsync(Uri uri, string? sha256 = null, CancellationToken ct = default)
+    public async Task<string> DownloadAsync(
+        Uri uri, string? sha256 = null, CancellationToken ct = default, IProgress<InstallProgress>? progress = null)
     {
         string downloads = Path.Combine(CacheDirectory, "downloads");
         Directory.CreateDirectory(downloads);
@@ -92,7 +93,24 @@ public sealed class SourceContext
                 }
 
                 await using FileStream file = File.Create(temp);
-                await response.Content.CopyToAsync(file, ct).ConfigureAwait(false);
+                if (progress is null)
+                {
+                    await response.Content.CopyToAsync(file, ct).ConfigureAwait(false);
+                }
+                else
+                {
+                    long? total = response.Content.Headers.ContentLength;
+                    await using Stream source = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+                    byte[] buffer = new byte[81920];
+                    long completed = 0;
+                    int read;
+                    while ((read = await source.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
+                    {
+                        await file.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
+                        completed += read;
+                        progress.Report(new InstallProgress(InstallPhase.Downloading, completed, total));
+                    }
+                }
             }
 
             if (sha256 is not null && !await ChecksumMatchesAsync(temp, sha256, ct).ConfigureAwait(false))
@@ -208,7 +226,7 @@ public sealed class SourceContext
     {
         await using FileStream stream = File.OpenRead(filePath);
         byte[] hash = await SHA256.HashDataAsync(stream, ct).ConfigureAwait(false);
-        return Convert.ToHexStringLower(hash).Equals(sha256, StringComparison.OrdinalIgnoreCase);
+        return Convert.ToHexString(hash).Equals(sha256, StringComparison.OrdinalIgnoreCase);
     }
 
     private static Task WriteEnvelopeAsync(string path, CacheEnvelope envelope, CancellationToken ct)
