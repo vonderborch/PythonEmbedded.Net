@@ -25,7 +25,7 @@ jobs:
         run: |
           mkdir -p packages
           dotnet pack source/PythonEmbedded.Net/PythonEmbedded.Net.csproj -c Release -o packages
-          for project in source/PackageManagers/*/*.csproj source/Runners/*/*.csproj; do
+          for project in source/PackageManagers/*/*.csproj source/Runners/*/*.csproj source/Sources/*/*.csproj; do
             [ -e "$project" ] && dotnet pack "$project" -c Release -o packages
           done
       - name: Publish to NuGet

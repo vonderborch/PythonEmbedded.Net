@@ -15,6 +15,12 @@ public enum InstallPhase
     /// <summary>Extracting the archive into the install directory.</summary>
     Extracting,
 
+    /// <summary>Compiling the interpreter from source (see <see cref="InstallProgress.Detail"/> for the build step).</summary>
+    Building,
+
+    /// <summary>Checking that the materialized interpreter runs and has the stdlib modules it needs.</summary>
+    Verifying,
+
     /// <summary>Patching baked-in sysconfig paths.</summary>
     Patching,
 

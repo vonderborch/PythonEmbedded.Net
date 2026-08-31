@@ -1,0 +1,37 @@
+name: Source Build
+
+# Compiling CPython takes 10-40 minutes per job, so it is deliberately kept out of ci.yml:
+# nothing here gates a pull request. It runs weekly to catch python.org layout changes and
+# toolchain drift, and on demand when the source-build satellite is touched.
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays, 06:00 UTC
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Build CPython from source and exercise it
+        env:
+          PYEMBED_TEST_SOURCE_BUILD: "1"
+        run: |
+          dotnet test test/automated/PythonEmbedded.Net.IntegrationTest/PythonEmbedded.Net.IntegrationTest.csproj \
+            -c Release -f net10.0 --filter "FullyQualifiedName~SourceBuild"
+        shell: bash
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-build-logs-${{ matrix.os }}
+          path: "**/cache/source-build/logs/*.log"
+          if-no-files-found: ignore

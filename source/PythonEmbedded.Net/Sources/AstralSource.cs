@@ -74,34 +74,14 @@ internal sealed class AstralSource : PythonSourceBase
     private static async Task<IReadOnlyDictionary<string, string>> GetChecksumsAsync(
         string tag, SourceContext context, CancellationToken ct)
     {
-        string cacheDir = Path.Combine(context.CacheDirectory, "astral");
-        Directory.CreateDirectory(cacheDir);
-        string cachePath = Path.Combine(cacheDir, $"SHA256SUMS-{tag}");
-
-        if (!File.Exists(cachePath))
-        {
-            if (context.Offline)
-            {
-                throw new PythonException(
-                    PythonErrorKind.Offline, $"SHA256SUMS for tag {tag} is not cached and Offline mode is enabled.");
-            }
-
-            Uri uri = new($"https://github.com/{Repository}/releases/download/{tag}/SHA256SUMS");
-            using HttpResponseMessage response = await context.Http.GetAsync(uri, ct).ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode)
-            {
-                throw new PythonException(
-                    PythonErrorKind.DownloadFailed,
-                    $"Fetch of {uri} failed with HTTP {(int)response.StatusCode} {response.ReasonPhrase}.");
-            }
-
-            string temp = cachePath + ".partial";
-            await File.WriteAllTextAsync(temp, await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false), ct).ConfigureAwait(false);
-            File.Move(temp, cachePath, overwrite: true);
-        }
+        string body = await context.GetCachedTextAsync(
+            $"astral-sha256sums-{tag}",
+            new Uri($"https://github.com/{Repository}/releases/download/{tag}/SHA256SUMS"),
+            TimeSpan.MaxValue,
+            ct).ConfigureAwait(false);
 
         Dictionary<string, string> checksums = new(StringComparer.Ordinal);
-        foreach (string line in await File.ReadAllLinesAsync(cachePath, ct).ConfigureAwait(false))
+        foreach (string line in body.Split('\n'))
         {
             // Format: "<sha256hex>  <filename>"
             int split = line.IndexOf(' ');

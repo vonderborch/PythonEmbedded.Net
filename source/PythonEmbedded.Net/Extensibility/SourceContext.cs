@@ -137,12 +137,39 @@ public sealed class SourceContext
     }
 
     /// <summary>
+    /// Extracts a <c>.tar.gz</c> or <c>.zip</c> archive into <paramref name="targetDirectory"/>, preserving
+    /// symlinks and Unix permissions. Sources that download archives should use this rather than reimplementing
+    /// extraction; it works around tar bugs in .NET 8 that affect real python-build-standalone and CPython archives.
+    /// </summary>
+    /// <exception cref="PythonException"><see cref="PythonErrorKind.InstallFailed"/> when the archive is an unsupported format or cannot be extracted.</exception>
+    public Task ExtractAsync(
+        string archivePath, string targetDirectory, CancellationToken ct = default,
+        IProgress<InstallProgress>? progress = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(archivePath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetDirectory);
+        return Internals.ArchiveExtractor.ExtractAsync(archivePath, targetDirectory, ct, progress);
+    }
+
+    /// <summary>
     /// Fetches JSON from <paramref name="uri"/> with disk caching: within <paramref name="ttl"/> the cached copy
     /// is returned without network access; past it, an ETag-conditional request refreshes the cache.
     /// In offline mode any cached copy is used regardless of age.
     /// </summary>
     public async Task<T?> GetCachedJsonAsync<T>(string key, Uri uri, TimeSpan ttl, CancellationToken ct = default)
     {
+        string body = await GetCachedTextAsync(key, uri, ttl, ct).ConfigureAwait(false);
+        return JsonSerializer.Deserialize<T>(body, JsonOptions);
+    }
+
+    /// <summary>
+    /// Fetches <paramref name="uri"/> as text with the same disk caching, ETag revalidation, and offline
+    /// semantics as <see cref="GetCachedJsonAsync{T}"/>. For payloads that aren't JSON — checksum manifests,
+    /// directory indexes, and the like.
+    /// </summary>
+    public async Task<string> GetCachedTextAsync(string key, Uri uri, TimeSpan ttl, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
         string dir = Path.Combine(CacheDirectory, "http");
         Directory.CreateDirectory(dir);
         string cachePath = Path.Combine(dir, key + ".json");
@@ -162,7 +189,7 @@ public sealed class SourceContext
 
         if (cached is not null && (Offline || DateTimeOffset.UtcNow - cached.FetchedAt < ttl))
         {
-            return JsonSerializer.Deserialize<T>(cached.Body, JsonOptions);
+            return cached.Body;
         }
 
         if (Offline)
@@ -189,7 +216,7 @@ public sealed class SourceContext
             if (response.StatusCode == System.Net.HttpStatusCode.NotModified && cached is not null)
             {
                 await WriteEnvelopeAsync(cachePath, cached with { FetchedAt = DateTimeOffset.UtcNow }, ct).ConfigureAwait(false);
-                return JsonSerializer.Deserialize<T>(cached.Body, JsonOptions);
+                return cached.Body;
             }
 
             if (!response.IsSuccessStatusCode)
@@ -197,7 +224,7 @@ public sealed class SourceContext
                 if (cached is not null)
                 {
                     Logger.LogWarning("Fetch of {Uri} failed with HTTP {Status}; using stale cache", uri, (int)response.StatusCode);
-                    return JsonSerializer.Deserialize<T>(cached.Body, JsonOptions);
+                    return cached.Body;
                 }
 
                 throw new PythonException(
@@ -208,14 +235,14 @@ public sealed class SourceContext
             string body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
             string? etag = response.Headers.ETag?.Tag;
             await WriteEnvelopeAsync(cachePath, new CacheEnvelope(etag, DateTimeOffset.UtcNow, body), ct).ConfigureAwait(false);
-            return JsonSerializer.Deserialize<T>(body, JsonOptions);
+            return body;
         }
         catch (HttpRequestException ex)
         {
             if (cached is not null)
             {
                 Logger.LogWarning(ex, "Fetch of {Uri} failed; using stale cache", uri);
-                return JsonSerializer.Deserialize<T>(cached.Body, JsonOptions);
+                return cached.Body;
             }
 
             throw new PythonException(PythonErrorKind.DownloadFailed, $"Fetch of {uri} failed: {ex.Message}", ex);

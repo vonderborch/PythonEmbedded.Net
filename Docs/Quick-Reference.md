@@ -110,7 +110,10 @@ o.Installer = new CondaInstaller { Channels = ["conda-forge"], MicromambaVersion
 o.Installer = new PoetryInstaller { WithDevDependencies = false, Version = null };     // .PackageManagers.Poetry
 o.Runner = new InProcessRunner();                                                      // .Runners.PythonNet
 PythonNetHost.Initialize(env); PythonNetHost.RunInScope(scope => ...);
+o.Sources.Insert(0, new SourceBuildSource { Optimize = true, Lto = true, Shared = true });     // .Sources.SourceBuild
 ```
+
+`SourceBuildSource` compiles CPython from a python.org tarball — minutes to tens of minutes for the first build of a version, cached like any other install afterwards. Options: `Optimize`/`Lto` (PGO+LTO, both on), `Shared` (on), `FreeThreaded` (3.13+, auto-names the install `source-build-ft`), `JobCount`, `ConfigureArguments`, `BuildEnvironment`, `BuildTimeout` (2 h), `KeepBuildDirectory`, `ExpectedSha256`, and `ProvisionDependencies` / `AllowElevation` (both off — missing build dependencies throw with the install command instead). Installs are keyed `cpython-<version>-<sourceName>`, so **every differently-configured instance needs its own `Name`**.
 
 `Version` / `MicromambaVersion` pin the provisioned tool to a specific release (e.g. `"0.5.11"`, `"1.8.3"`, `"2.1.1-0"`); `null` / `"latest"` (default) always grabs the newest. Pinned versions are provisioned into their own private location so different requested versions can coexist.
 

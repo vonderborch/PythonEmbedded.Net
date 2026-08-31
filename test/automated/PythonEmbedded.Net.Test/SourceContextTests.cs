@@ -154,4 +154,54 @@ public class SourceContextTests
             () => context.DownloadAsync(new Uri("https://example.com/files/other.tar.gz"), new string('0', 64)))!;
         Assert.That(ex.Kind, Is.EqualTo(PythonErrorKind.DownloadFailed));
     }
+
+    [Test]
+    public async Task CachedText_Serves_Non_Json_Bodies_And_Caches_Them()
+    {
+        using TempRoot root = new();
+        const string manifest = "abc  file-one.tar.gz\ndef  file-two.tar.gz\n";
+        CountingHandler handler = new(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(manifest),
+        });
+        Uri uri = new("https://github.com/owner/repo/releases/download/tag/SHA256SUMS");
+
+        string first = await Context(root, handler).GetCachedTextAsync("sums", uri, TimeSpan.FromHours(1));
+        string second = await Context(root, handler).GetCachedTextAsync("sums", uri, TimeSpan.FromHours(1));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(first, Is.EqualTo(manifest), "body must be returned verbatim, not parsed");
+            Assert.That(second, Is.EqualTo(manifest));
+            Assert.That(handler.Requests, Is.EqualTo(1), "fresh cache must not refetch");
+        });
+
+        // TimeSpan.MaxValue is how immutable payloads (release checksum manifests) opt out of revalidation.
+        SourceContext offline = Context(root, handler, offline: true);
+        Assert.That(await offline.GetCachedTextAsync("sums", uri, TimeSpan.MaxValue), Is.EqualTo(manifest));
+        Assert.That(handler.Requests, Is.EqualTo(1), "offline mode must never touch the network");
+    }
+
+    [Test]
+    public async Task ExtractAsync_Unpacks_An_Archive_And_Rejects_Unknown_Formats()
+    {
+        using TempRoot root = new();
+        SourceContext context = Context(root, new CountingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)));
+
+        string archive = Path.Combine(root.Path, "sample.zip");
+        string sourceDirectory = Path.Combine(root.Path, "to-zip");
+        Directory.CreateDirectory(sourceDirectory);
+        await File.WriteAllTextAsync(Path.Combine(sourceDirectory, "hello.txt"), "contents");
+        System.IO.Compression.ZipFile.CreateFromDirectory(sourceDirectory, archive);
+
+        string target = Path.Combine(root.Path, "extracted");
+        await context.ExtractAsync(archive, target);
+        Assert.That(await File.ReadAllTextAsync(Path.Combine(target, "hello.txt")), Is.EqualTo("contents"));
+
+        string bogus = Path.Combine(root.Path, "sample.rar");
+        await File.WriteAllTextAsync(bogus, "not an archive");
+        PythonException ex = Assert.ThrowsAsync<PythonException>(
+            () => context.ExtractAsync(bogus, Path.Combine(root.Path, "nope")))!;
+        Assert.That(ex.Kind, Is.EqualTo(PythonErrorKind.InstallFailed));
+    }
 }

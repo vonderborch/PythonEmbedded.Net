@@ -54,6 +54,9 @@
   <Folder Name="/source/Runners/">
     <Project Path="source\Runners\PythonEmbedded.Net.Runners.PythonNet\PythonEmbedded.Net.Runners.PythonNet.csproj" />
   </Folder>
+  <Folder Name="/source/Sources/">
+    <Project Path="source\Sources\PythonEmbedded.Net.Sources.SourceBuild\PythonEmbedded.Net.Sources.SourceBuild.csproj" />
+  </Folder>
   <Folder Name="/source/Runtimes/">
     <Project Path="source\Runtimes\PythonEmbedded.Net.Runtime.Python311\PythonEmbedded.Net.Runtime.Python311.csproj" />
     <Project Path="source\Runtimes\PythonEmbedded.Net.Runtime.Python312\PythonEmbedded.Net.Runtime.Python312.csproj" />

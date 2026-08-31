@@ -29,6 +29,7 @@ That first line downloads a standalone CPython from [python-build-standalone](ht
 | `PythonEmbedded.Net.PackageManagers.Conda` | Conda-ecosystem environments via a self-provisioned [micromamba](https://mamba.readthedocs.io/) — for conda-only packages (CUDA, geospatial, ...). |
 | `PythonEmbedded.Net.PackageManagers.Poetry` | Installs a `pyproject.toml` project's dependencies with Poetry. |
 | `PythonEmbedded.Net.Runners.PythonNet` | In-process execution via [Python.NET](https://github.com/pythonnet/pythonnet) — no subprocess overhead, direct .NET↔Python interop. |
+| `PythonEmbedded.Net.Sources.SourceBuild` | Compiles CPython from official python.org tarballs — free-threaded builds, custom `configure` flags, your own OpenSSL, platforms with no prebuilt archive. Minutes to tens of minutes for the first build of a version. |
 
 Satellites plug in with one line — no registration, no reflection:
 
@@ -37,6 +38,7 @@ PythonEnvironment.Configure(o =>
 {
     o.Installer = new UvInstaller();       // packages via uv
     o.Runner = new InProcessRunner();      // execution via Python.NET
+    o.Sources.Insert(0, new SourceBuildSource());  // interpreters compiled from source
 });
 ```
 

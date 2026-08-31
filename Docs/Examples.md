@@ -15,6 +15,7 @@ Recipes for PythonEmbedded.Net 2.x. See [Quick-Reference.md](Quick-Reference.md)
 - [Conda](#conda)
 - [Poetry](#poetry)
 - [In-Process Execution (Python.NET)](#in-process-execution-pythonnet)
+- [Building CPython from Source](#building-cpython-from-source)
 - [Error Handling](#error-handling)
 - [Dependency Injection](#dependency-injection)
 - [Multiple Python Versions](#multiple-python-versions)
@@ -242,6 +243,66 @@ PythonNetHost.RunInScope(scope =>
     // direct interop with the Python.NET scope
 });
 ```
+
+## Building CPython from Source
+
+`SourceBuildSource` downloads an official tarball from python.org and compiles it. Insert it **first**
+so it wins over the prebuilt sources, and show progress — the first build of a version takes 15–40
+minutes with the default PGO+LTO profile:
+
+```csharp
+using PythonEmbedded.Net.Sources.SourceBuild;
+
+PythonEnvironment.Configure(o => o.Sources.Insert(0, new SourceBuildSource()));
+
+var env = await PythonEnvironment.GetEnvironmentAsync(
+    "3.13", "myapp",
+    progress: new Progress<InstallProgress>(p => Console.WriteLine($"{p.Phase} {p.Detail}")));
+```
+
+Once built, the interpreter is cached like any other installation; later calls return in milliseconds.
+For iteration, turn the optimizations off — minutes instead of tens of minutes:
+
+```csharp
+new SourceBuildSource { Optimize = false, Lto = false }
+```
+
+### Build variants
+
+Installs are keyed by version *and* source name, so **every differently-configured instance needs its own
+`Name`** — otherwise the first variant built wins and the second is silently never compiled.
+`FreeThreaded` handles this for you; anything else does not:
+
+```csharp
+PythonEnvironment.Configure(o =>
+{
+    o.Sources.Insert(0, new SourceBuildSource());                        // "source-build"
+    o.Sources.Insert(0, new SourceBuildSource { FreeThreaded = true });  // "source-build-ft" (3.13+)
+    o.Sources.Insert(0, new SourceBuildSource
+    {
+        Name = "py-debug",                                               // required: a distinct install
+        ConfigureArguments = ["--with-pydebug"],
+        Optimize = false,
+    });
+});
+```
+
+### Build dependencies
+
+By default the source detects what is missing and throws with the command that installs it, rather than
+installing system software behind your back. Opt in to have it handled:
+
+```csharp
+new SourceBuildSource
+{
+    ProvisionDependencies = true,   // brew on macOS; a conda-forge prefix under <root>/tools/ on Linux
+    AllowElevation = true,          // additionally allow sudo / the winget UAC prompt
+}
+```
+
+macOS always needs the Xcode Command Line Tools (`xcode-select --install`) — that one cannot be
+automated. Windows needs the Visual Studio C++ build tools, and its build downloads external
+dependencies during `build.bat`, so it never works offline.
 
 ## Error Handling
 

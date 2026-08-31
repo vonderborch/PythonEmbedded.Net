@@ -39,6 +39,7 @@
       <ProjectReference Include="..\..\..\source\PackageManagers\PythonEmbedded.Net.PackageManagers.Poetry\PythonEmbedded.Net.PackageManagers.Poetry.csproj" />
       <ProjectReference Include="..\..\..\source\PackageManagers\PythonEmbedded.Net.PackageManagers.Uv\PythonEmbedded.Net.PackageManagers.Uv.csproj" />
       <ProjectReference Include="..\..\..\source\Runners\PythonEmbedded.Net.Runners.PythonNet\PythonEmbedded.Net.Runners.PythonNet.csproj" />
+      <ProjectReference Include="..\..\..\source\Sources\PythonEmbedded.Net.Sources.SourceBuild\PythonEmbedded.Net.Sources.SourceBuild.csproj" />
       <ProjectReference Include="..\PythonEmbedded.Net.Test\PythonEmbedded.Net.Test.csproj" />
     </ItemGroup>
 

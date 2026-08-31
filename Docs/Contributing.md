@@ -58,6 +58,8 @@ PythonEmbedded.Net/
 │   │   └── PythonEmbedded.Net.PackageManagers.Poetry/
 │   ├── Runners/                                  # IPythonRunner satellites
 │   │   └── PythonEmbedded.Net.Runners.PythonNet/
+│   ├── Sources/                                  # IPythonSource satellites
+│   │   └── PythonEmbedded.Net.Sources.SourceBuild/  # compiles CPython from python.org tarballs
 │   └── Runtimes/                                 # offline runtime packages
 │       ├── manifest.json                         # committed: astral tag + asset URLs + sha256
 │       ├── tools/update-manifest.py               # refreshes manifest.json from astral releases
@@ -214,7 +216,7 @@ Keep language concise, favor runnable code snippets, and cross-reference related
 
 ### Adding a New Satellite
 
-1. New project under `source/PackageManagers/` or `source/Runners/`, named `PythonEmbedded.Net.PackageManagers.<Name>` or `PythonEmbedded.Net.Runners.<Name>`
+1. New project under `source/PackageManagers/`, `source/Runners/`, or `source/Sources/`, named `PythonEmbedded.Net.<Folder>.<Name>`
 2. Implement the relevant interface; use `Tools.EnsureAsync` for any external binary the satellite needs
 3. Add it to `PythonEmbedded.Net.slnx` under the matching solution folder
 4. Cover it with integration tests under `PythonEmbedded.Net.IntegrationTest`

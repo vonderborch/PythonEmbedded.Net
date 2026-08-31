@@ -78,7 +78,7 @@ dotnet add package PythonEmbedded.Net.Runtime.Python313
 
 The package bundles the official archives; at build time the one matching your platform is copied next to your app, where the library finds it automatically. `PythonEnvironment.GetEnvironmentAsync("3.13", "myapp")` then works with zero configuration, even with `o.Offline = true`.
 
-## Faster installs, conda, poetry, in-process
+## Faster installs, conda, poetry, in-process, compiled interpreters
 
 Each is a one-line opt-in from a satellite package — see [Examples.md](Examples.md):
 
@@ -87,6 +87,9 @@ PythonEnvironment.Configure(o => o.Installer = new UvInstaller());      // Pytho
 PythonEnvironment.Configure(o => o.Installer = new CondaInstaller());   // PythonEmbedded.Net.PackageManagers.Conda
 PythonEnvironment.Configure(o => o.Installer = new PoetryInstaller());  // PythonEmbedded.Net.PackageManagers.Poetry
 PythonEnvironment.Configure(o => o.Runner = new InProcessRunner());     // PythonEmbedded.Net.Runners.PythonNet
+PythonEnvironment.Configure(o => o.Sources.Insert(0, new SourceBuildSource()));  // PythonEmbedded.Net.Sources.SourceBuild
 ```
 
 Each package-manager installer accepts a `Version` (uv/poetry) or `MicromambaVersion` (conda) option to pin the underlying tool to a specific release instead of always grabbing the latest — e.g. `new UvInstaller { Version = "0.5.11" }`.
+
+`SourceBuildSource` is the odd one out: instead of downloading a prebuilt interpreter it compiles one from an official python.org tarball, which takes 15–40 minutes the first time a version is requested (cached like any other install afterwards). Reach for it when you need a free-threaded build, custom `configure` flags, or a platform astral doesn't publish — and pass an `IProgress<InstallProgress>` so that first call doesn't look like a hang.

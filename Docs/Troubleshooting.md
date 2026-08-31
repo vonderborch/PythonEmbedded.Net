@@ -10,6 +10,7 @@ Common issues with PythonEmbedded.Net 2.x and how to resolve them.
 - [Environment Issues](#environment-issues)
 - [Package Installation Issues](#package-installation-issues)
 - [Tool Provisioning (uv / conda / poetry)](#tool-provisioning-uv--conda--poetry)
+- [Source Builds](#source-builds)
 - [Python.NET Issues](#pythonnet-issues)
 - [Platform-Specific Issues](#platform-specific-issues)
 - [Debugging Tips](#debugging-tips)
@@ -150,6 +151,68 @@ If provisioning fails in an offline/sandboxed environment, pre-populate `<root>/
 ### uv-created venvs and tool resolution
 
 uv doesn't copy `uv` itself into the venv it creates. `UvInstaller` resolves `uv` from the **base interpreter**, not the venv — this is transparent to callers, but if you're inspecting `pyvenv.cfg` manually, note that `home` points at the base install, not at a bundled uv.
+
+## Source Builds
+
+Issues specific to `PythonEmbedded.Net.Sources.SourceBuild` (`SourceBuildSource`). Every build writes a full transcript to `<root>/cache/source-build/logs/<version>-<timestamp>.log`, and every failure message ends with that path — read it first; the exception carries only the last 40 lines.
+
+### The first call takes tens of minutes
+
+Expected. `Optimize`/`Lto` default to on (PGO + LTO), which is 15–40 minutes for a first build. The result is cached like any other installation, so later calls return in milliseconds. Pass an `IProgress<InstallProgress>` to `GetEnvironmentAsync` to see `Building` with `configure` / `make` / `make install` in `Detail`, and use `new SourceBuildSource { Optimize = false, Lto = false }` while iterating.
+
+### `Kind = InstallFailed`: missing build dependencies
+
+Thrown *before* any compilation when the toolchain probe finds nothing usable and `ProvisionDependencies` is off (the default). The message names the exact command for the platform. Either run it yourself, or opt in:
+
+```csharp
+new SourceBuildSource
+{
+    ProvisionDependencies = true,   // brew (macOS) or a conda-forge prefix under <root>/tools/ (Linux)
+    AllowElevation = true,          // additionally allow `sudo -n <pm> install …` / the winget UAC prompt
+}
+```
+
+`ProvisionDependencies` alone never touches system-wide state; the system package manager and the Visual Studio Build Tools installer both additionally require `AllowElevation`. `sudo` is invoked as `sudo -n`, so it fails immediately rather than hanging on a password prompt — prime the credential cache first if you need it.
+
+### macOS: "the Xcode Command Line Tools are required"
+
+The one prerequisite that cannot be automated (`xcode-select --install` is a GUI flow, and `softwareupdate -i` needs root). Run it manually, then retry:
+
+```bash
+xcode-select --install
+xcode-select -p          # should print a path once installed
+```
+
+### `Kind = InstallFailed`: "the interpreter compiled, but these required modules are missing"
+
+CPython silently omits a module whose dependency was absent at *configure* time, so a clean `make` still yields a crippled interpreter. `ssl`, `zlib`, `ctypes`, `sqlite3`, and `ensurepip` are treated as fatal; `readline`, `lzma`, `bz2`, `tkinter`, and `dbm.gnu` are logged as warnings and the install is kept. Install the named development packages and rebuild. The build log also contains configure's own `The necessary bits to build these optional modules were not found` line, which names modules more precisely than the import probe.
+
+Rebuilding means deleting the existing install first, since a completed install is what makes later calls skip the source entirely:
+
+```csharp
+var installs = await PythonEnvironment.ListInstallationsAsync();
+await PythonEnvironment.RemoveAsync(installs.First(i => i.SourceName == "source-build"));
+```
+
+### A source-built interpreter stops working after deleting `<root>/tools/`
+
+Linux-only, and only when `ProvisionDependencies` provisioned a conda-forge prefix: the interpreter links against `<root>/tools/build-deps-<X.Y>/lib` for its whole life (that is why the prefix lives in `tools/` rather than the sweepable `cache/`). Deleting it breaks the interpreter with loader errors like `libssl.so.3: cannot open shared object file`. Either restore the prefix by rebuilding, or install the dependencies system-wide and rebuild so the interpreter links against those instead.
+
+### Only one variant of a version ever gets built
+
+Installs are keyed `cpython-<version>-<sourceName>`, so two `SourceBuildSource` instances that differ only in build options resolve to the same install — the first one built wins and the second is never compiled. Give each variant its own `Name` (`FreeThreaded` does this for you; nothing else does):
+
+```csharp
+o.Sources.Insert(0, new SourceBuildSource { Name = "py-debug", ConfigureArguments = ["--with-pydebug"] });
+```
+
+### The source is skipped and another one wins
+
+`TryInstallAsync` returns `null` — deliberately, so the next source gets a turn — when python.org has no matching version, or when metadata lookup fails while `Offline = true`. Build *failures* are always thrown, never swallowed. Enable logging (see below) to see which case it was at `Debug` level, and `o.Sources.Clear()` before inserting if you want the source build to be the only option.
+
+### Windows builds fail with no network
+
+Not fixable by caching the tarball: `PCbuild\build.bat` runs `get_externals.bat`, which downloads OpenSSL/tcl/tk and the rest from the network on every fresh build tree. Windows source builds always need network, even when everything else is offline.
 
 ## Python.NET Issues
 

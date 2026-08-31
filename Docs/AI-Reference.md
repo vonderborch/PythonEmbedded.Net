@@ -78,6 +78,7 @@ public sealed class PythonOptions
 {
     string RootDirectory { get; set; }                 // default: app-local data folder
     IList<IPythonSource> Sources { get; }               // default: bundled archives, then astral download
+                                                        // satellite: Sources.Insert(0, new SourceBuildSource()) compiles from python.org
     IPackageInstaller Installer { get; set; }           // default: pip + venv
     IPythonRunner Runner { get; set; }                  // default: buffered subprocess
     string? GitHubToken { get; set; }                   // default: GITHUB_TOKEN env var
@@ -260,9 +261,14 @@ If you're choosing a runner per-call, feel free to let it vary by call site.
 - Using `env.Start(...)` for something that just needs to run once and return output (use `RunAsync` instead).
 - Building a cache/dictionary of environments keyed by name in application code — redundant, the library
   already resolves warm environments in milliseconds from disk.
-- Assuming satellite installers/runners (uv, conda, poetry, Python.NET) are referenced by default — they're
-  separate NuGet packages (`PythonEmbedded.Net.PackageManagers.*`, `PythonEmbedded.Net.Runners.*`) that must be
-  added and wired via `Configure` (or a per-environment override) before use.
+- Assuming satellite installers/runners/sources (uv, conda, poetry, Python.NET, source builds) are referenced by
+  default — they're separate NuGet packages (`PythonEmbedded.Net.PackageManagers.*`, `PythonEmbedded.Net.Runners.*`,
+  `PythonEmbedded.Net.Sources.*`) that must be added and wired via `Configure` (or a per-environment override) before use.
+- Registering more than one `SourceBuildSource` without giving each a distinct `Name`. Installs are keyed
+  `cpython-<version>-<sourceName>`, so variants that differ only in build options collide and only the first is
+  ever built (`FreeThreaded` auto-names itself `source-build-ft`; every other axis needs an explicit `Name`).
+- Generating a `SourceBuildSource` registration without an `IProgress<InstallProgress>` — the default PGO+LTO
+  profile takes 15–40 minutes for the first build of a version, and a silent call looks like a hang.
 
 ## Where to look for more
 
